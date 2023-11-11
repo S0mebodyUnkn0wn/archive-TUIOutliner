@@ -1,7 +1,7 @@
 import curses
 
 from . import widgets
-from .widgets import Widget
+from .widgets import Widget, Header
 from ..Backend.configs import session_config
 
 # TODO Overlays can have a container attribute that defines a widget (or whole window) they should be contained within
@@ -37,14 +37,14 @@ class Overlay(widgets.Widget):
         if color is None:
             color = session_config.ColorsConfig.overlay_text_pair
 
-        self.stdscr.addnstr(self.top,self.left,self.header.center(self.width),self.width, curses.color_pair(color))
+        self.window.addnstr(self.top, self.left, self.header.center(self.width), self.width, curses.color_pair(color))
 
     def render(self):
         color = session_config.ColorsConfig.overlay_text_pair
         for y in range(self.top,self.bottom):
-            self.stdscr.addnstr(y,self.left," "*self.width,self.width, curses.color_pair(color))
+            self.window.addnstr(y, self.left, " " * self.width, self.width, curses.color_pair(color))
 
-        self.render_decoration()
+        self.render_decorations()
 
 
 class OpenNewOverlay(Overlay):
@@ -53,16 +53,15 @@ class OpenNewOverlay(Overlay):
         super().__init__(stdscr)
         self.fixed_length=20
         self.fixed_width=70
-        self.header = "Open New Widget"
-        self.available_widgets: list[Widget] = available_widgets
-        self.closed_widgets: list[Widget] = []
+        self.header: Header = Header("Open New Widget", align="center")
+        self.available_widgets: list[type(Widget)] = available_widgets
+        self.closed_widgets: list[type(Widget)] = self.available_widgets
         self.selected_line: int = 0
-        self.get_closed()
 
     def get_closed(self):
         for widget in self.available_widgets:
             if not widget.is_open:
-                self.closed_widgets.append(widget)
+                self.closed_widgets.append(type(widget))
 
     def scroll(self, line):
         if 0<=self.selected_line + line<len(self.closed_widgets):
@@ -74,4 +73,4 @@ class OpenNewOverlay(Overlay):
             color = session_config.ColorsConfig.overlay_text_pair
             if index==self.selected_line:
                 color = session_config.ColorsConfig.bright_select
-            self.stdscr.addnstr(self.content_top+index, self.content_left, self.closed_widgets[index].name, self.content_width, curses.color_pair(color))
+            self.window.addnstr(self.content_top + index, self.content_left, self.closed_widgets[index].__name__, self.content_width, curses.color_pair(color))

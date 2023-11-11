@@ -13,15 +13,14 @@ def _get_open(widgets: list[Widget]):
     return open_widgets
 
 
-def partition_grid(widgets: list[Widget]):
+def partition_grid(widget_count: int):
     window_length = curses.LINES
     window_width = curses.COLS
 
-    open_widgets = _get_open(widgets)
     layout = []
     grid_cols = 1
     grid_rows = 1
-    while grid_rows * grid_cols < len(open_widgets):
+    while grid_rows * grid_cols < widget_count:
         if grid_cols < grid_rows:
             grid_cols += 1
         else:
@@ -42,12 +41,12 @@ def partition_grid(widgets: list[Widget]):
     return layout
 
 
-def partition_halves(widgets: list[Widget]):
+def partition_halves(widget_count: int):
     layout = [Bounds(0, 0, curses.LINES, curses.COLS)]
-    open_widgets = _get_open(widgets)
+
     sep = session_config.WindowPartition.separation
 
-    while len(layout) < len(open_widgets):
+    while len(layout) < widget_count:
         prev = layout[-1]
         nxt = Bounds()
         nxt.left = prev.left
@@ -66,14 +65,19 @@ def partition_halves(widgets: list[Widget]):
     return layout
 
 
-def partition_space(widgets: list[Widget], mode: str = "auto"):
+def partition_space(widgets: list[Widget] | int, mode: str = "auto"):
     """Available modes: auto, halves, grid """
+    if isinstance(widgets, int):
+        widget_count = widgets
+    else:
+        open_widgets = _get_open(widgets)
+        widget_count = len(open_widgets)
 
     # Note that the layout is read in reverse (right to left, bottom to top)
     match mode.lower():
         case "auto":
-            return partition_halves(widgets)
+            return partition_halves(widget_count)
         case "halves":
-            return partition_halves(widgets)
+            return partition_halves(widget_count)
         case "grid":
-            return partition_grid(widgets)
+            return partition_grid(widget_count)

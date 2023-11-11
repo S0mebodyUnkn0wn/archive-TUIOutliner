@@ -15,6 +15,18 @@ class Bounds:
     bottom: int = 0
     right: int = 0
 
+    @property
+    def center(self):
+        return Point(self.left + self.width // 2, self.top + self.length // 2)
+
+    @property
+    def width(self):
+        return self.right-self.left
+
+    @property
+    def length(self):
+        return self.bottom - self.top
+
     @overload
     def collide(self, point: Point = Point(0, 0)):
         ...

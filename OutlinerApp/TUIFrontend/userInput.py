@@ -5,11 +5,12 @@ from watchdog.events import FileSystemEventHandler
 
 from . import application
 from . import manual
-from .overlays import Overlay, OpenNewOverlay
-from .outliners import Outliner, TaskOutliner, CalendarOutliner
+from .data import Bounds, Point
+from .outliners import TaskOutliner, CalendarOutliner
+from .overlays import OpenNewOverlay
 from .widgets import Widget
 from ..Backend.configs import session_config
-from .data import Bounds, Point
+
 
 class InputManager(FileSystemEventHandler):
 
@@ -24,13 +25,13 @@ class InputManager(FileSystemEventHandler):
         self.app: application.Application = app
         self.window: curses.window = window
 
-    def regiseter_child(self, child: Outliner):
+    def regiseter_child(self, child: Widget):
         self.children.append(child)
         child.input_manager = self
         if self.root_window is None:
             self.root_window = child
 
-    def make_root(self, widget: Outliner):
+    def make_root(self, widget: Widget):
         for child in self.children:
             if child == widget:
                 self.root_window = child
@@ -48,84 +49,113 @@ class InputManager(FileSystemEventHandler):
             try:
                 mouse = curses.getmouse()
                 if mouse[-1] == curses.BUTTON1_PRESSED:
-                    self.focused.unfocus()
-                    self.collide(mouse[1], mouse[2]).focus()
+                    window_under_mouse = self.collide(mouse[1], mouse[2])
+                    if window_under_mouse is not None:
+                        self.focused.unfocus()
+                        window_under_mouse.focus()
             except curses.error:
                 pass
 
         # passed through:
         if key == curses.KEY_UP:
             self.focused.scroll((-1, 0))
+            return
 
         if key == curses.KEY_DOWN:
             self.focused.scroll((1, 0))
+            return
 
         if key == curses.KEY_RIGHT:
             self.focused.scroll((0, 1))
+            return
 
         if key == curses.KEY_LEFT:
             self.focused.scroll((0, -1))
+            return
 
         if key == ord("a"):
             self.focused.add_entry()
+            return
 
         if key == ord("r"):
             self.focused.remove_entry()
+            return
 
         if isinstance(self.focused, TaskOutliner):
             if key == ord("h"):
                 self.focused.toggle_hide_done()
+                return
 
             if key == ord("d"):
                 self.focused.mark_done()
+                return
 
         if isinstance(self.focused, CalendarOutliner):
             if key == ord("T"):
                 self.focused.show_today()
+                return
 
             # Toggle showing task deadlines in Events
             if key == ord("t"):
                 self.focused.toggle_deadlines()
+                return
 
         # handled
+
+        # include repartition
+        self.app.enqueue_partition_update()
+
         if key == ord("o"):
             self.open_new()
+            return
 
         if key == ord("W"):
             self.close_focused()
+            return
 
         if key == ord("f"):
             self.fullscreen()
+            return
 
         if key == ord("s"):
             self.open_all()
+            return
 
         if key == ord("\t"):
             self.move_focus()
+            return
 
         if key == ord("?"):
             self.show_help()
+            return
 
         if key == ord("m"):
             self.swap_widget()
+            return
 
         if key == curses.KEY_SRIGHT:
             self.partition_right()
+            return
 
         if key == curses.KEY_SLEFT:
             self.partition_left()
+            return
 
         if key == curses.KEY_SR:
             self.partition_up()
+            return
 
         if key == curses.KEY_SF:
             self.partition_down()
+            return
 
         if key == ord("R"):
             self.reset_partition()
+            return
 
         if key == curses.KEY_RESIZE:
             curses.resize_term(*self.window.getmaxyx())
+            return
 
     def show_help(self):
         self.window.clear()
@@ -161,13 +191,13 @@ class InputManager(FileSystemEventHandler):
     def close_focused(self):
         self.focused: Widget
         self.focused.is_open = False
+        self.app.widgets.remove(self.focused)
 
         self.move_focus()
 
     def reset_partition(self):
         session_config.WindowPartition.horizontal = 0
         session_config.WindowPartition.vertical = 0
-        self.app.force_update_all()
 
     def partition_down(self):
         for child in self.children:
@@ -221,9 +251,16 @@ class InputManager(FileSystemEventHandler):
 
         for child in self.children:
             child: Widget
+            if child.window.enclose(y, x):
+                return child
+
+        '''
+        for child in self.children:
+            child: Widget
             if child.bounds.collide(x, y):
                 return child
         return None
+        '''
 
     def swap_widget(self):
         directons = ""
@@ -236,31 +273,37 @@ class InputManager(FileSystemEventHandler):
             self.display_prompt("Move Mode | Move" + directons + " " * curses.COLS,
                                 color=session_config.ColorsConfig.bright_select)
             key = self.window.getch()
-            preselected.render_decoration()
+            preselected.render_decorations()
+            preselected.window.syncup()
+            preselected_bounds = Bounds(preselected.window.getparyx()[0],
+                                        preselected.window.getparyx()[1],
+                                        preselected.window.getparyx()[0] + preselected.window.getmaxyx()[0],
+                                        preselected.window.getparyx()[1] + preselected.window.getmaxyx()[1])
             match key:
                 case 27:
                     break
                 case curses.KEY_UP:
-                    point = Point(preselected.center.x,preselected.top-sep-1)
-                    if 0<=point.y<=curses.LINES:
-                        preselected = self.collide(point.x,point.y)
+                    point = Point(preselected_bounds.center.x, preselected_bounds.top - sep - 1)
+                    if 0 <= point.y <= curses.LINES:
+                        preselected = self.collide(point.x, point.y)
                         directons += " UP"
                 case curses.KEY_DOWN:
-                    point = Point(preselected.center.x, preselected.bottom + sep + 1)
+                    point = Point(preselected_bounds.center.x, preselected_bounds.bottom + sep + 1)
                     if 0 <= point.y <= curses.LINES:
                         preselected = self.collide(point.x, point.y)
                         directons += " DOWN"
                 case curses.KEY_RIGHT:
-                    point = Point(preselected.right + 1 + sep, preselected.center.y)
+                    point = Point(preselected_bounds.right + 1 + sep, preselected_bounds.center.y)
                     if 0 <= point.x <= curses.COLS:
                         preselected = self.collide(point.x, point.y)
                         directons += " RIGHT"
                 case curses.KEY_LEFT:
-                    point = Point(preselected.left - 1 - sep, preselected.center.y)
+                    point = Point(preselected_bounds.left - 1 - sep, preselected_bounds.center.y)
                     if 0 <= point.x <= curses.COLS:
                         preselected = self.collide(point.x, point.y)
                         directons += " LEFT"
-            preselected.render_decoration(color=preselected_color)
+            preselected.render_decorations(color=preselected_color)
+            preselected.window.syncup()
             self.window.refresh()
         else:
             pres_ind = self.app.widgets.index(preselected)
@@ -273,12 +316,11 @@ class InputManager(FileSystemEventHandler):
             self.app.force_update_all()
 
     def open_new(self):
-        overlay = OpenNewOverlay(self.window,self.app.widgets)
-
+        overlay = OpenNewOverlay(self.window, self.app.all_widgets)
 
         key = None
 
-        while key not in [ord("o"),27]:
+        while key not in [ord("o"), 27]:
             self.app.draw_overlay(overlay)
             key = self.window.getch()
             if key == curses.KEY_UP:
@@ -287,11 +329,7 @@ class InputManager(FileSystemEventHandler):
                 overlay.scroll(1)
             if key == ord("\n"):
                 try:
-                    overlay.closed_widgets[overlay.selected_line].is_open=True
+                    self.app.add_widget(overlay.closed_widgets[overlay.selected_line])
                 except IndexError:
                     pass
                 break
-
-
-
-

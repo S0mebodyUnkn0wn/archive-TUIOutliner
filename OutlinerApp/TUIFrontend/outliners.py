@@ -1,15 +1,14 @@
 import calendar
 import curses
 import datetime
-import pickle
 
-from Backend import ioManager
-from Backend.timetable import Timetable
-from .widgets import Widget
+from .widgets import Widget, Header
 from ..Backend import data
+from ..Backend import ioManager
 from ..Backend.configs import session_config
-from ..Backend.events import EventCalendar, Event
+from ..Backend.events import Event
 from ..Backend.tasks import TaskNode
+from ..Backend.timetables import TimetableItem, TimetableTask
 
 
 class Outliner(Widget):
@@ -19,7 +18,6 @@ class Outliner(Widget):
     def __init__(self, stdscr: curses.window, x_offset=0, y_offset=0, input_manager=None):
         super().__init__(stdscr, x_offset, y_offset, input_manager)
         self.margins = self.config.margins
-        self.header_margin = 2
         self.fixed_width = self.config.fixed_width
         self.fixed_length = self.config.fixed_length
 
@@ -35,32 +33,15 @@ class Outliner(Widget):
     def update(self):
         super().update()
 
-    def render_header(self, color=None):
-        if color is None:
-            color = session_config.ColorsConfig.selected_pair if self.is_focused \
-                else session_config.ColorsConfig.generic_text_pair
-        if self.header is None:
-            return
-        self.stdscr.addnstr(self.top, self.left + self.header_margin,
-                            f"{self.header}", self.width - self.header_margin * 2, curses.color_pair(color))
-
 
 class TaskOutliner(Outliner):
     tasks: list[TaskNode]
-    root_task: TaskNode
-    line_count: int
     config = session_config.TaskOutlinerConfig
     ID = 0
 
     @staticmethod
     def reload_data():
-
-        new_root_task = ioManager.load_tasks()
-
-        TaskOutliner.root_task = new_root_task
-
-        TaskOutliner.tasks = TaskOutliner.root_task.get_all_children()
-        TaskOutliner.line_count = len(TaskOutliner.tasks)
+        TaskOutliner.tasks = ioManager.get_root_task().get_all_children()
 
     @staticmethod
     def toggle_hide_done():
@@ -88,8 +69,12 @@ class TaskOutliner(Outliner):
         self.reload_data()
 
     @property
+    def line_count(self):
+        return len(TaskOutliner.tasks)
+
+    @property
     def header(self):
-        return f"TODO List"
+        return Header(f"TODO List")
 
     def update(self):
         super().update()
@@ -114,8 +99,7 @@ class TaskOutliner(Outliner):
         else:
             task_deadline = None
         new_task = TaskNode(text=task_text, deadline=task_deadline)
-        self.root_task.add_subtask(new_task)
-        ioManager.dump_tasks(self.root_task)
+        ioManager.add_subtask(new_task)
 
     def remove_entry(self):
         TaskOutliner.remove_mode = True
@@ -124,8 +108,7 @@ class TaskOutliner(Outliner):
         if len(task_str) != 0:
             task_num = int(task_str)
             if 1 <= task_num <= len(self.tasks):
-                self.tasks[task_num - 1].remove()
-                ioManager.dump_tasks(self.root_task)
+                ioManager.remove_task(self.tasks[task_num - 1])
         TaskOutliner.remove_mode = False
 
     def mark_done(self):
@@ -143,47 +126,45 @@ class TaskOutliner(Outliner):
         if len(task_str) != 0:
             task_num = int(task_str)
             if 1 <= task_num <= len(self.tasks):
-                self.tasks[task_num - 1].mark_done()
-                ioManager.dump_tasks(self.root_task)
+                ioManager.mark_done(self.tasks[task_num - 1])
         TaskOutliner.remove_mode = False
 
     def render(self):
 
-        line = 0 - self.start_line
-        for index in range(len(self.tasks)):
-            task: TaskNode = self.tasks[index]
+        line = -1 - self.start_line
 
-            if self.content_length >= line >= 0:
-
-                output = f"{(str(self.tasks.index(task) + 1) + ' ') if TaskOutliner.remove_mode else ''}" \
-                         f"{task.to_cli_format()}"
-                right = self.content_left + self.content_width
-
-                if task.deadline is not None:
-                    color = session_config.ColorsConfig.deadline_pair if task.importance != data.Importance.DONE \
-                        else session_config.ColorsConfig.done_pair
-                    deadline = session_config.Icons.deadline_icon + datetime.date.strftime(task.deadline, "%Y/%m/%d")
-                    deadline_start_x = self.content_left + self.content_width - len(deadline)
-                    if deadline_start_x < curses.COLS:
-                        self.stdscr.addnstr(self.content_top + line, deadline_start_x, deadline,
-                                            self.width - deadline_start_x + self.content_left, curses.color_pair(color))
-                    right = deadline_start_x
-
-                if self.content_left + len(output) >= right:
-                    output = output[0:right - self.content_left - 4]
-                    output += "..."
-
-                color = self._select_color(task)
-
-                self.stdscr.addnstr(self.content_top + line, self.content_left, output,
-                                    self.content_width, curses.color_pair(color))
+        for task in self.tasks:
             line += 1
-        self.render_frame()
-        self.render_header()
+            if not self.content_length >= line >= 0:
+                continue
+            output = f"{(str(self.tasks.index(task) + 1) + ' ') if TaskOutliner.remove_mode else ''}" \
+                     f"{task.to_cli_format()}"
+            right_limit = self.content_right
+
+            if task.deadline is not None:
+                right_limit = self._render_deadline(line, task)
+            if self.content_left + len(output) >= right_limit:
+                output = output[0:right_limit - self.content_left - 4]
+                output += "..."
+
+            color = self._select_color(task)
+            self.renderer.render_string(output, self.content_top + line, self.content_left, self.content_width, color)
+
+        self.render_decorations()
+        self.window.syncup()
+
+    def _render_deadline(self, line, task):
+        color = session_config.ColorsConfig.deadline_pair if task.importance != data.Importance.DONE \
+            else session_config.ColorsConfig.done_pair
+        deadline = session_config.Icons.deadline_icon + datetime.date.strftime(task.deadline, "%Y/%m/%d")
+        right_limit = self.content_right - len(deadline)
+
+        self.renderer.render_string(deadline, self.content_top + line, self.content_right - len(deadline), self.content_width, color)
+
+        return right_limit
 
 
 class CalendarOutliner(Outliner):
-    timetable = Timetable()
     config = session_config.EventOutlinerConfig
     widget_title = "Events"
     show_tasks = True
@@ -198,26 +179,14 @@ class CalendarOutliner(Outliner):
     def header(self):
         out = f"{calendar.month_abbr[self.open_date.month]} {self.open_date.year}".center(
             self.width - self.header_margin * 2, self.config.chars["f_hor"])
-        return self.widget_title + out[len(self.widget_title):]
+        return Header(self.widget_title + out[len(self.widget_title):])
 
     def update(self):
         super().update()
         self.reload_data()
 
-    def reload_data(self):
-        if session_config.IOConfig.event_file.is_file():
-            with open(session_config.IOConfig.event_file, "rb") as file:
-                try:
-                    CalendarOutliner.timetable.load_pickle(file)
-                except EOFError:
-                    CalendarOutliner.timetable = EventCalendar()
-
     def toggle_deadlines(self):
         self.show_tasks = not self.show_tasks
-
-    def _dump_events(self):
-        with open(session_config.IOConfig.event_file, "wb") as file:
-            pickle.dump(self.timetable.daytables_by_date, file)
 
     def add_entry(self):
         date_str = self.input_manager.recieve_text("Add new event on (dd or dd/mm/yyyy): ", split_mask="__/__/____")
@@ -240,9 +209,9 @@ class CalendarOutliner(Outliner):
         if len(new_event_text) == 0:
             return False
 
-        # TODO Switch to Timetable
-        self.timetable.add_item(Event(date=new_event_date, time=new_event_time, text=new_event_text))
-        self._dump_events()
+        new_event = Event(date=new_event_date, text=new_event_text)
+        new_event.start_time = new_event_time
+        ioManager.add_event(new_event)
 
     def remove_entry(self):
         date_str = self.input_manager.recieve_text("Delete event on (date): ", split_mask="__")
@@ -255,8 +224,7 @@ class CalendarOutliner(Outliner):
         event_str = self.input_manager.recieve_text("Delete event number:")
         if len(event_str) != 0:
             event_num = int(event_str)
-            self.timetable.remove_item(datetime.date(self.open_date.year, self.open_date.month, date), event_num)
-            self._dump_events()
+            ioManager.remove_from_timetable(datetime.date(self.open_date.year, self.open_date.month, date), event_num)
         CalendarOutliner.remove_mode = False
 
     def scroll(self, direction: (int, int)):
@@ -281,74 +249,80 @@ class CalendarOutliner(Outliner):
         column_size = self.content_width // 7
         grid_gap = 1
         row = 0
-        tasks = None
-        if self.show_tasks:
-            tasks = ioManager.load_tasks().get_all_children(with_deadline_only=True)
 
         for week in weeks:
             for day in week:
                 if day[0] == 0:
                     continue
-                # day: (day_num, weekday_num)
-                cell_top = self.content_top + row * row_size
-                cell_left = self.content_left + day[1] * column_size
-                cell_date = datetime.date(self.open_date.year, self.open_date.month, day[0])
-
-                # Select color
-                color = session_config.ColorsConfig.generic_text_pair
-                if cell_date.weekday() >= 5:
-                    color = session_config.ColorsConfig.weekend_pair
-                if cell_date == cell_date.today():
-                    color = session_config.ColorsConfig.bright_select
-                    self.stdscr.addnstr(cell_top, cell_left, " " * (column_size - grid_gap), column_size - 2, curses.color_pair(color))
-
-                # Add a header, if necessary
-                if cell_date.day <= 7:
-                    cell_header = calendar.day_name[cell_date.weekday()]
-                    if len(cell_header) > column_size - 3:
-                        cell_header = calendar.day_abbr[cell_date.weekday()]
-                    self.stdscr.addnstr(cell_top, cell_left + (column_size - len(cell_header) + 1) // 2,
-                                        cell_header, column_size - 2, curses.color_pair(color))
-
-                # Draw a date in top left corner of the cell
-                self.stdscr.addnstr(cell_top, cell_left, f"{cell_date.day}", column_size - 2, curses.color_pair(color))
-
-                # Start drawing events
-                color = session_config.ColorsConfig.generic_text_pair
-                event_count = 0
-                if cell_date in self.timetable.event_dict.keys():
-                    event_lsit = self.timetable.event_dict[cell_date]
-                    for event in event_lsit:
-                        event_count += 1
-                        if event_count >= row_size:
-                            break
-                        out = f"{(str(event_count) + ' ') if cell_date == CalendarOutliner.remove_mode else event.icon}" \
-                              f"{event}"
-                        out += " " * (curses.COLS - len(out))
-                        self.stdscr.addnstr(cell_top + event_count, cell_left, out, self.right - cell_left,
-                                            curses.color_pair(color))
-                if self.show_tasks:
-                    color = session_config.ColorsConfig.deadline_pair
-                    task_n = event_count + 1
-                    for task in tasks:
-                        if task.deadline != cell_date or task.importance == data.Importance.DONE:
-                            continue
-                        if task_n >= row_size:
-                            break
-                        out = f"{session_config.Icons.deadline_icon}{task.text}"
-                        out += " " * (curses.COLS - len(out))
-                        self.stdscr.addnstr(cell_top + task_n, cell_left, out, self.width - cell_left,
-                                            curses.color_pair(color))
-                        task_n += 1
+                self._render_cell(column_size, day, grid_gap, row, row_size)
             row += 1
-        self.render_frame()
-        self.render_header()
+        self.render_decorations()
+        self.window.syncup()
+
+    def _render_cell(self, column_size, day, grid_gap, row, row_size):
+        # day: (day_num, weekday_num)
+        cell_top = self.content_top + row * row_size
+        cell_left = self.content_left + day[1] * column_size
+        cell_date = datetime.date(self.open_date.year, self.open_date.month, day[0])
+
+        # Select color
+        color = session_config.ColorsConfig.generic_text_pair
+        if cell_date.weekday() >= 5:
+            color = session_config.ColorsConfig.weekend_pair
+        if cell_date == cell_date.today():
+            color = session_config.ColorsConfig.bright_select
+            self.window.addnstr(cell_top, cell_left, " " * (column_size - grid_gap), column_size - 2, curses.color_pair(color))
+
+        # Add a header, if necessary
+        if cell_date.day <= 7:
+            cell_header = calendar.day_name[cell_date.weekday()]
+            if len(cell_header) > column_size - 3:
+                cell_header = calendar.day_abbr[cell_date.weekday()]
+            self.window.addnstr(cell_top, cell_left + (column_size - len(cell_header) + 1) // 2,
+                                cell_header, column_size - 2, curses.color_pair(color))
+
+        # Draw a date in top left corner of the cell
+        self.window.addnstr(cell_top, cell_left, f"{cell_date.day}", column_size - 2, curses.color_pair(color))
+
+        # Start drawing events
+        color = session_config.ColorsConfig.generic_text_pair
+        event_count = 0
+
+        # If there are no events, there's nothing to draw
+        if cell_date not in ioManager.get_timetable().daytables_by_date.keys():
+            return
+        timetable = ioManager.get_timetable()
+        event_lsit = timetable.daytables_by_date[cell_date]
+        # Same as above
+        if len(event_lsit) == 0:
+            return
+
+        for event in event_lsit:
+            event_count += 1
+            if event_count >= row_size:
+                break
+            if isinstance(event, TimetableTask):
+                if not self.show_tasks: continue
+                if event.task.is_done():
+                    out = f"{session_config.Icons.done_icon}"
+                    color = session_config.ColorsConfig.done_pair
+                else:
+                    out = f"{session_config.Icons.deadline_icon}"
+                    color = session_config.ColorsConfig.deadline_pair
+                out += f"{event.task.text}"
+            else:
+                out = f"{(str(event_count) + ' ') if cell_date == CalendarOutliner.remove_mode else event.icon}" \
+                      f"{event}"
+            out += " " * (curses.COLS - len(out))
+            self.window.addnstr(cell_top + event_count, cell_left, out, self.right - cell_left,
+                                curses.color_pair(color))
 
 
 # TODO Rewrite AgendaOutliner, implementing V1 Interface from page 4 in the notebook
 class AgendaOutliner(CalendarOutliner, TaskOutliner):
     ID = 2
     config = session_config.DayOutlinerConfig
+    line_count: int = 0
 
     def __init__(self, stdscr: curses.window, x_offset=0, y_offset=0):
         super().__init__(stdscr, x_offset, y_offset)
@@ -363,23 +337,23 @@ class AgendaOutliner(CalendarOutliner, TaskOutliner):
         pass
 
     @property
-    def today_events(self):
-        if self.today in self.timetable.event_dict:
-            return self.timetable.event_dict[self.today]
+    def today_events(self) -> list[TimetableItem]:
+        if self.today in ioManager.get_timetable().daytables_by_date:
+            return ioManager.get_timetable().daytables_by_date[self.today]
         else:
             return []
 
     @property
-    def later_events(self):
+    def later_events(self) -> list[TimetableItem]:
         later = self.open_date
-        if later in self.timetable.event_dict.keys():
-            return self.timetable.event_dict[later]
+        if later in ioManager.get_timetable().daytables_by_date.keys():
+            return ioManager.get_timetable().daytables_by_date[later]
         else:
             return []
 
     @property
     def today_tasks(self):
-        tasks_with_deadline = self.root_task.get_all_children(with_deadline_only=True)
+        tasks_with_deadline = ioManager.get_root_task().get_all_children(with_deadline_only=True)
         today_tasks = []
         for task in tasks_with_deadline:
             if task.deadline == self.today:
@@ -389,7 +363,7 @@ class AgendaOutliner(CalendarOutliner, TaskOutliner):
     @property
     def later_tasks(self):
         later = self.open_date
-        tasks_with_deadline = self.root_task.get_all_children(with_deadline_only=True)
+        tasks_with_deadline = ioManager.get_root_task().get_all_children(with_deadline_only=True)
         later_tasks = []
         for task in tasks_with_deadline:
             if task.deadline == later:
@@ -419,82 +393,47 @@ class AgendaOutliner(CalendarOutliner, TaskOutliner):
         if len(later_text) > 0:
             out += later_text.center(horizontal_size - self.header_margin * 2, self.config.chars["f_hor"])
         out = widget_title + out[len(widget_title):]
-        return out
+        return Header(out)
 
     def render(self):
         columns = (self.open_date != self.open_date.today()) + 1
         column_width = self.content_width // columns
 
-        tasks_header = "Tasks-due".center(column_width, "-")
-        events_header = f"Events".center(column_width, "-")
         divider = "·"
 
         events = self.today_events, self.later_events
-        tasks = self.today_tasks, self.later_tasks
 
         color = session_config.ColorsConfig.generic_text_pair
-
-        max_events = max(len(events[0]), len(events[1]))
-        max_tasks = max(len(tasks[0]), len(tasks[1]))
-
-        combined_lists = events, tasks
-        max_combined = max_events, max_tasks
-        header_combined = events_header, tasks_header
 
         line_count = 0  # used for calculating self.line_count to limit scrolling
 
         for column in range(columns):
             line = 0 - self.start_line
-            for block in range(2):
 
-                # Draw header, if necessary
-                if len(combined_lists[block][column]) > 0:
-                    if self.content_length >= line >= 0:
-                        self.stdscr.addnstr(self.content_top + line, self.content_left + column_width * column,
-                                            header_combined[block],
-                                            column_width, curses.color_pair(color))
-                    line += 1
+            # Draw contents of a block (events or tasks)
+            for index in range(len(events)):
+                if index >= len(events[column]):
+                    continue
+                event: TimetableItem = events[column][index]
+                if self.content_length >= line >= 0:
+                    output = f"""{(str(index + 1) + ' ') if event.date == CalendarOutliner.remove_mode else event.icon}""" + \
+                         (event.start_time.strftime('%H:%M') + ' ' if event.start_time is not None else '') + event.name
+                    self.renderer.render_string(output,self.content_top + line, self.content_left + column_width * column, column_width, color)
 
-                # Draw contents of a block (events or tasks)
-                for index in range(max_combined[block]):
-                    if index < len(combined_lists[block][column]):
-
-                        if block == 0:
-                            event = events[column][index]
-                            if self.content_length >= line >= 0:
-                                output = f"""{(str(index + 1) + ' ') if event.date == CalendarOutliner.remove_mode
-                                else event.icon}""" + \
-                                         (event.time.strftime('%H:%M') +
-                                          ' ' if event.time is not None else '') + event.text
-                                self.stdscr.addnstr(self.content_top + line, self.content_left + column_width * column,
-                                                    output,
-                                                    column_width, curses.color_pair(color))
-
-                        if block == 1:
-                            task: TaskNode = tasks[column][index]
-                            if self.content_length >= line >= 0:
-                                self.stdscr.addnstr(self.content_top + line, self.content_left + column_width * column,
-                                                    task.to_cli_format(),
-                                                    column_width, curses.color_pair(color))
-
-                        line += 1
-
-                # If there was an events block, add an empty line to visually separate it from tasks
-                if len(combined_lists[block][column]) > 0:
-                    line += 1
+                line += 1
 
             line_count = max(line + self.start_line - 1, line_count)
 
         self.line_count = line_count
 
-        # Draw divider
+        # Draw a divider
         if columns == 2:
             center = self.content_left + (self.content_width // 2 - 1)
             for y in range(self.content_length):
-                self.stdscr.addnstr(self.content_top + y, center, divider, 1, curses.color_pair(color))
+                self.window.addnstr(self.content_top + y, center, divider, 1, curses.color_pair(color))
 
-        self.render_frame()
-        self.render_header()
+        self.render_decorations()
+        self.window.syncup()
 
 
 class DayplanOutliner(Outliner):
@@ -502,11 +441,6 @@ class DayplanOutliner(Outliner):
     def __init__(self, stdscr: curses.window):
         super().__init__(stdscr)
         self.header = "Plan For Today"
-
-
-
-
-
 
     ''' DayplanOutliner UI model
         _________________________________________________
@@ -516,8 +450,8 @@ class DayplanOutliner(Outliner):
         |       ^                 ^         ^           |
         | Now Doing: *work name*                        |
         |_______________________________________________| '''
-    def render(self):
 
+    def render(self):
         # Render time string
         # TODO Make the entire TUI async and event based. Oh fuck
 
@@ -527,4 +461,4 @@ class DayplanOutliner(Outliner):
 
         # Render current active
 
-        self.render_decoration()
+        self.render_decorations()

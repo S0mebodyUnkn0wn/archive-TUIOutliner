@@ -1,193 +1,121 @@
 #!/usr/bin/python3
 import datetime
-import re
 import pickle
 
-from pathlib import Path
-from datetime import date
+from ..Backend.events import Event
+from ..Backend.timetables import Timetable, TimetableItem
+from ..Backend.configs import session_config
+from ..Backend.tasks import TaskNode
 
-from Backend.tasks import TaskNode
-from Backend.data import Importance, TaskOrigin
-from Backend.configs import session_config
-
-
-def load_events():
-    event_list = None
-    return event_list
+_root_task: TaskNode | None = None
+_timetable: Timetable | None = None
 
 
-def load_tasks():
-    with open(session_config.IOConfig.tasks_file, "rb") as file:
-        try:
-            root_task = pickle.load(file)
-        except EOFError:
-            root_task = TaskNode()
-    return root_task
+def get_root_task():
+    global _root_task
+    if _root_task is None:
+        load_tasks()
+    return _root_task
 
 
-def dump_tasks(root_task):
-    with open(session_config.IOConfig.tasks_file, "wb") as file:
-        pickle.dump(root_task, file)
-
-# Logseq I/O
-def load_data():
-    logseq_tasks = parse_logseq(session_config.IOConfig.logseq_dir)
-    with open(session_config.IOConfig.tasks_file, "wb") as file:
-        pickle.dump(logseq_tasks, file)
-    csv_lines = logseq_tasks.to_calcure_csv(hide_tasks=(Importance.DONE,))
-    if session_config.IOConfig.calcure_file is not None and session_config.IOConfig.calcure_file.is_file():
-        with open(session_config.IOConfig.calcure_file, "w") as file:
-            print(csv_lines, file=file)
+def get_timetable():
+    global _timetable
+    if _timetable is None:
+        load_events()
+        if _timetable is None:
+            raise RuntimeError()
+    return _timetable
 
 
-def add_to_logseq(task: TaskNode):
-    filepath = Path(session_config.IOConfig.logseq_dir,"journals",datetime.date.today().strftime("%Y_%m_%d.md"))
-    with open(filepath,"a") as file:
-        print(task.to_logseq_format(), file=file)
+def add_subtask(subtask: TaskNode, root = _root_task):
+    global _root_task
+    global _timetable
+    if root is None:
+        load_tasks()
+        root = _root_task
+    root.add_subtask(subtask)
+    if subtask.deadline is not None:
+        _timetable.add_item(TimetableItem.from_task_with_deadline(subtask))
+        dump_timetable()
+    dump_tasks()
 
 
-def modify_task(task: TaskNode, job: str):
-    origin = task.origin
-    if origin is None:
-        return
-    file = origin.file
-    with open(file) as f:
-        lines = f.readlines()
-    cursor = origin.block_start_line
-    cursor_line_end = len(lines)
-    for i in range(cursor + 1, len(lines)):
-        if lines[i].strip().startswith("-"):
-            cursor_line_end = i
-            break
-    new_text = ""
-    for line in lines[:origin.block_start_line]:
-        new_text += line
-
-    match job.lower().split():
-        case ["remove"]:
-            pass
-        case ["mark", new_mark]:
-            match new_mark:
-                case "done":
-                    new_text += origin.block_first_line_text.replace(Importance.to_text(task.importance), Importance.to_text(Importance.DONE))
-                    cursor_line_end=origin.block_start_line+1
-        case _:
-            cursor_line_end=origin.block_start_line
-
-    for line in lines[cursor_line_end:]:
-        new_text+= line
-    file.write_text(new_text)
-    return True
+def mark_done(task: TaskNode):
+    tt = _timetable.find_item(task).task
+    tt.mark_done()
+    if tt.__repr__() != task.__repr__():
+        task.mark_done()
+    dump_timetable()
+    dump_tasks()
 
 
 def remove_task(task: TaskNode):
-    return modify_task(task, job="remove")
+    global _root_task
+    global _timetable
+    task.remove()
+    try:
+        if task.deadline is not None:
+            _timetable.remove_item(TimetableItem.from_task_with_deadline(task))
+            dump_timetable()
+    except ValueError:
+        pass
+    dump_tasks()
 
 
-def mark_as_done(task: TaskNode):
-    return modify_task(task, job="mark done")
+def add_event(event: Event):
+    global _root_task
+    global _timetable
+    _timetable.add_item(TimetableItem.from_event(event))
+    dump_timetable()
 
 
-def parse_logseq_block(block: list[str], task_origin: TaskOrigin):
-    """Returns TaskNode, if block contains one, False otherwise"""
-
-    nest_level = block[0].count("\t")
-    first_line_text: str = block[0].strip("\n\t -#")
-    first_word, sep, task_text = first_line_text.partition(" ")
-    keywords = session_config.TaskConfig.keywords
-
-    if first_word in keywords:
-        second_word, sep, task_text = task_text.partition(" ")
-        priority = 0
-        if re.fullmatch(r"\[#[ABC]]", second_word):
-            match re.search("[ABC]", second_word).group():
-                case "A":
-                    priority = 1
-                case "B":
-                    priority = 0
-                case "C":
-                    priority = -1
-        else:
-            task_text = second_word + sep + task_text
-
-        if first_word == "DONE":
-            importance = Importance.DONE
-        elif first_word == "DOING":
-            importance = Importance.DOING_B + priority
-        elif first_word == "WAITING":
-            importance = Importance.WAITING_B + priority
-        else:
-            importance = Importance.TODO_B + priority
-        deadline = None
-        for i in range(len(block)):
-            block[i] = block[i].strip()
-            if re.search("DEADLINE: <.*>", block[i]):
-                deadline: str = block[i]
-                deadline: date = date.fromisoformat(
-                    deadline.removeprefix("DEADLINE: ").strip("<>").partition(" ")[0])
-
-        task = TaskNode(task_text, deadline=deadline, importance=importance, origin=task_origin)
-        return task
-    return False
+def remove_event(event: Event):
+    global _root_task
+    global _timetable
+    _timetable.remove_item(TimetableItem.from_event(event))
+    dump_timetable()
 
 
-def parse_logseq(logseq_dir: Path):
-    """returns root node of tasks found in specified logseq directory"""
+def remove_from_timetable(date: datetime.date, num: int):
+    global _root_task
+    global _timetable
+    _timetable.remove_item(date,num)
+    dump_timetable()
 
-    root_node: TaskNode = TaskNode()
-    if not logseq_dir.is_dir():
-        raise NotADirectoryError
-    for path in ["./journals", "./pages"]:
-        pages = logseq_dir.joinpath(path).iterdir()
-        for page in pages:
-            with open(page) as file:
-                lines = file.readlines()
-            cursor = 0
-            level_headers = {}
 
-            while cursor != len(lines):
-                for i in range(cursor + 1, len(lines)):
-                    if lines[i].strip().startswith("-"):
-                        cursor_line_end = i
-                        break
-                else:
-                    cursor_line_end = len(lines)
-                block: list = lines[cursor:cursor_line_end]
-                nest_level = block[0].count("\t")
-                first_line_text: str = block[0].strip("\n\t -#")
-                level_headers[nest_level] = first_line_text
-                keywords = session_config.TaskConfig.keywords
-                header_text = None
-                task_origin = TaskOrigin(page, cursor, block[0])
-                task = parse_logseq_block(block, task_origin)
-                if task:
-                    if nest_level > 0:
-                        for i in range(nest_level):
-                            level_first_line_text: str = level_headers[i]
-                            level_first_word, _, level_task_text = level_first_line_text.partition(" ")
-                            if level_first_word in keywords:
-                                header_text = level_task_text
-                        if header_text is None:
-                            header_text = level_headers[nest_level - 1]
-                        for word in keywords:
-                            header_text = header_text.removeprefix(word + " ")
-                        if re.match(r"\[#[ABC]]", header_text):
-                            header_text = header_text.partition(" ")[2]
+def load_events():
+    global _root_task
+    global _timetable
+    if session_config.IOConfig.event_file.is_file():
+        with open(session_config.IOConfig.event_file, "rb") as file:
+            try:
+                _timetable = pickle.load(file)
+            except EOFError:
+                _timetable = Timetable()
 
-                    if nest_level:
-                        header_node = root_node.find_subtask(header_text)
-                        if not header_node:
-                            header_node = TaskNode(header_text, importance=task.importance, origin=task_origin)
-                            root_node.add_subtask(header_node)
-                        header_node: TaskNode
-                        header_node.add_subtask(task)
-                        if task.importance > header_node.importance:
-                            header_node.importance = task.importance
-                    else:
-                        root_node.add_subtask(task)
-                cursor = cursor_line_end
-    root_node.child_nodes.sort(reverse=True)
-    return root_node
+
+def dump_timetable():
+    global _root_task
+    global _timetable
+    with open(session_config.IOConfig.event_file, "wb") as file:
+        pickle.dump(_timetable, file)
+
+
+def load_tasks():
+    global _root_task
+    global _timetable
+    with open(session_config.IOConfig.tasks_file, "rb") as file:
+        try:
+            _root_task = pickle.load(file)
+        except EOFError:
+            _root_task = TaskNode()
+
+
+def dump_tasks():
+    global _root_task
+    global _timetable
+    with open(session_config.IOConfig.tasks_file, "wb") as file:
+        pickle.dump(_root_task, file)
 
 
 if __name__ == '__main__':

@@ -12,10 +12,17 @@ from . import partitioner
 
 class Application:
     widgets: list[Widget]
+    all_widgets: list[type(Widget)] = (
+        TaskOutliner,
+        CalendarOutliner,
+        AgendaOutliner,
+    )
 
     def __init__(self, stdscr):
-        self.stdscr = stdscr
+        self.stdscr: curses.window = stdscr
         self.input_manager: userInput.InputManager = userInput.InputManager(self, self.stdscr)
+        self.layout: list["Bounds"] = None
+        self._do_update = False
         self.run()
 
     def run(self):
@@ -36,13 +43,15 @@ class Application:
         observer.schedule(self.input_manager, path=session_config.IOConfig.event_file, recursive=True)
         observer.start()
 
-        self.widgets = [
-            TaskOutliner(self.stdscr),
-            CalendarOutliner(self.stdscr),
-            AgendaOutliner(self.stdscr),
+        self.widgets = []
+
+        start_widgets = [
+            TaskOutliner,
+            CalendarOutliner,
+            AgendaOutliner,
         ]
-        for widget in self.widgets:
-            self.input_manager.regiseter_child(widget)
+        for widget_class in start_widgets:
+            self.add_widget(widget_class)
 
         self.widgets[0].focus()
         try:
@@ -53,6 +62,26 @@ class Application:
             pass
         observer.stop()
         return
+
+    def add_widget(self, widget_class: type[Widget]):
+        self.layout = partitioner.partition_space(len(self.widgets)+1)
+        bounds = self.layout[-1]
+        new_window = self.stdscr.subwin(bounds.length,bounds.width,bounds.top,bounds.left)
+        new_widget = widget_class(new_window)
+        new_widget.is_open = True
+        self.widgets.append(new_widget)
+        self.input_manager.regiseter_child(new_widget)
+        self.enqueue_partition_update()
+
+    def update_windows(self):
+        for index in range(len(self.widgets)):
+            bounds = self.layout[index]
+            widget = self.widgets[index]
+            widget.window.bkgdset(str(index))
+            widget.window = self.stdscr.subwin(bounds.length,bounds.width,bounds.top,bounds.left)
+
+    def enqueue_partition_update(self):
+        self._do_update = True
 
     def force_update_all(self):
         """Force total redraw of all active windows,
@@ -77,20 +106,16 @@ class Application:
         try:
             if len(self.widgets) > 0:
                 self.input_manager.make_root(self.widgets[0])
-                # space = partitioner.partition_space_spin(len(open_widgets))
-                layout = partitioner.partition_space(self.widgets)
                 for widget in self.widgets:
-                    if not widget.is_open:
-                        continue
-                    bounds = layout.pop(0)
-                    widget.top = bounds.top
-                    widget.left = bounds.left
-                    widget.right = bounds.right
-                    widget.bottom = bounds.bottom
-                for widget in self.widgets:
+                    if self._do_update:
+                        new_part = partitioner.partition_space(self.widgets)
+                        self.layout = new_part
+                        self.update_windows()
+                        self._do_update=False
                     if widget.is_open:
                         widget.reload_data()
                         widget.render()
+                        #widget.window.box()
         except curses.error:
             pass
         self.stdscr.refresh()

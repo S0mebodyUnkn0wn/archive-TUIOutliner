@@ -1,7 +1,9 @@
 import curses
+from dataclasses import dataclass
 
 from .data import Point
 from .data import Bounds
+from .renderer import Renderer
 
 from ..Backend.configs import session_config
 
@@ -13,15 +15,24 @@ def render_msg(stdscr: curses.window, text: str):
     stdscr.getch()
 
 
+@dataclass
+class Header:
+    text: str
+    align: str = "left"
+
+    def __str__(self):
+        return self.text
+
 class Widget:
     margins: tuple[int, int]
+    renderer: "Renderer"
     _fixed_width: bool | int
     _fixed_length: bool | int
     config: session_config.WidgetConfig
     is_focused: bool = False
     is_open = True
     is_root_window: bool = False
-    header: str = None
+    header: Header = None
     name: str
     ID = None
 
@@ -33,21 +44,23 @@ class Widget:
         super().__init__()
         self.config = session_config.WidgetConfig
         self.margins = self.config.margins
+        self.header_margin = 2
         self._fixed_width = False
         self._fixed_length = False
-        self.stdscr = stdscr
+        self.window = stdscr
         self.is_framed = True
         self.left = x_offset
         self.top = y_offset
+        self.renderer = Renderer(self)
         self.input_manager = input_manager
 
-    @property
-    def name(self):
-        return str(type(self).__name__)
+    @staticmethod
+    def name():
+        return None
 
     @property
     def fixed_width(self):
-        return self._fixed_width
+        return self._fixed_width if self._fixed_width else self.window.getmaxyx()[1]
 
     @fixed_width.setter
     def fixed_width(self, val):
@@ -55,7 +68,7 @@ class Widget:
 
     @property
     def fixed_length(self):
-        return self._fixed_length
+        return self._fixed_length if self._fixed_length else self.window.getmaxyx()[0]
 
     @fixed_length.setter
     def fixed_length(self, val):
@@ -63,16 +76,11 @@ class Widget:
 
     @property
     def width(self):
-        width = curses.COLS
-        if self.fixed_width:
-            width = self.fixed_width
-        if width + self.left > curses.COLS or width < 0:
-            width = curses.COLS - self.left
-        return width
+        return self.fixed_width
 
     @property
     def length(self):
-        return self.fixed_length if self.fixed_length else curses.LINES
+        return self.fixed_length
 
     @property
     def right(self):
@@ -107,59 +115,41 @@ class Widget:
         return self.left + self.margins[1] + self.is_framed
 
     @property
+    def content_right(self):
+        return self.content_left+self.content_width;
+
+    @property
     def bounds(self):
         return Bounds(left=self.left,top=self.top,right=self.right,bottom=self.bottom)
 
     @property
     def center(self):
-        return Point(self.width//2, self.length//2)
+        return Point(self.left + self.width//2, self.top + self.length//2)
 
     def focus(self):
         self.is_focused = True
+        self.render_decorations(color=session_config.ColorsConfig.selected_pair)
 
     def unfocus(self):
         self.is_focused = False
+        self.render_decorations(color=session_config.ColorsConfig.generic_text_pair)
+
 
     def render(self):
         pass
 
     def update(self):
-        self.stdscr.redrawwin()
+        self.window.redrawwin()
         self.render()
 
-    def render_decoration(self,color = None):
+    def render_decorations(self, color = None):
         if self.is_framed:
-            self.render_frame(color)
+            self.renderer.render_frame(color)
         if self.header is not None:
-            self.render_header(color)
+            self.renderer.render_header(color)
 
-    def render_header(self, color=None):
-        pass
 
-    def render_frame(self, color = None):
-        chars = self.config.chars
 
-        if color is None:
-            if self.is_focused:
-                color = curses.color_pair(session_config.ColorsConfig.selected_pair)
-            else:
-                color = curses.color_pair(session_config.ColorsConfig.generic_text_pair)
-        else:
-            color = curses.color_pair(color)
-        line = chars["f_top_left"] + \
-            chars["f_hor"] * (self.width - 2) + \
-            chars["f_top_right"]
-        self.stdscr.addstr(self.top, self.left, line, color)
 
-        for y in range(self.top + 1, self.bottom):
-            self.stdscr.addstr(y, self.left, chars["f_vert"], color)
-            self.stdscr.addstr(y, self.right, chars["f_vert"], color)
-        try:
-            line = chars["f_bottom_left"] + chars["f_hor"] * (self.left + self.width - self.left - 2) \
-                   + chars[
-                       "f_bottom_right"]
-            self.stdscr.addstr(self.bottom, self.left, line, color)
-        except curses.error:
-            pass
 
 

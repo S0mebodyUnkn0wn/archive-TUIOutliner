@@ -135,6 +135,9 @@ class TaskNode:
             out += "\n DEADLINE: <" + self.deadline.strftime("%Y-%m-%d %a") + ">"
         return out
 
+    def is_done(self):
+        return self.importance==Importance.DONE
+
     def get_tree(self):
         if self.is_root:
             out = ""
