@@ -23,6 +23,7 @@ class Header:
     def __str__(self):
         return self.text
 
+
 class Widget:
     margins: tuple[int, int]
     renderer: "Renderer"
@@ -30,8 +31,6 @@ class Widget:
     _fixed_length: bool | int
     config: session_config.WidgetConfig
     is_focused: bool = False
-    is_open = True
-    is_root_window: bool = False
     header: Header = None
     name: str
     ID = None
@@ -40,8 +39,9 @@ class Widget:
     def reload_data():
         pass
 
-    def __init__(self, stdscr: curses.window, x_offset=0, y_offset=0, input_manager=None):
+    def __init__(self, stdscr: curses.window, app, x_offset=0, y_offset=0, input_manager=None):
         super().__init__()
+        self.app = app
         self.config = session_config.WidgetConfig
         self.margins = self.config.margins
         self.header_margin = 2
@@ -129,16 +129,18 @@ class Widget:
     def focus(self):
         self.is_focused = True
         self.render_decorations(color=session_config.ColorsConfig.selected_pair)
+        return self
 
     def unfocus(self):
         self.is_focused = False
         self.render_decorations(color=session_config.ColorsConfig.generic_text_pair)
-
+        return self
 
     def render(self):
         pass
 
     def update(self):
+        self.reload_data()
         self.window.redrawwin()
         self.render()
 

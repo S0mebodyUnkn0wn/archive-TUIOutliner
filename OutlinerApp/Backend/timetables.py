@@ -4,7 +4,6 @@ from dataclasses import dataclass
 from typing import overload
 
 from OutlinerApp.Backend.configs import session_config
-from OutlinerApp.Backend.events import Event
 from OutlinerApp.Backend.tasks import TaskNode
 
 
@@ -30,14 +29,12 @@ class TimetableItem:
     def __post_init__(self):
         self.TID = TimetableItem.TID
         TimetableItem.TID += 1
+        if self.end_time is None:
+            self.end_time = self.start_time
 
     @property
     def icon(self):
         return session_config.Icons.generic_event_icon
-
-    @staticmethod
-    def from_event(event: Event):
-        return TimetableEvent(date=event.date, name=event.text, start_time=event.time, event=event)
 
     @staticmethod
     def from_task_with_deadline(task: TaskNode):
@@ -49,6 +46,8 @@ class TimetableItem:
     def is_momentary(self) -> bool:
         return self.start_time == self.end_time
 
+    def __str__(self):
+        return self.name
     # is_recurring: bool
 
 
@@ -66,23 +65,6 @@ class TimetableTask(TimetableItem):
         if isinstance(other,TimetableTask):
             return self.task == other.task
         return same
-
-
-@dataclass
-class TimetableEvent(TimetableItem):
-    event: Event = None
-    item_type: str = "EVENT"
-
-    @property
-    def icon(self):
-        return self.event.icon
-
-    def __eq__(self, other):
-        same = super().__eq__(other)
-        if isinstance(other, TimetableEvent):
-            return self.event == other.event
-        return same
-
 
 class Timetable:
     daytables_by_date: dict[datetime.date, list[TimetableItem]]
@@ -115,6 +97,9 @@ class Timetable:
             index = -1
             for item in day_timetable:
                 index += 1
+                if item.start_time is None:
+                    day_timetable.insert(index, new_item)
+                    break
                 if item.end_time <= new_item.start_time:
                     continue
                 elif item.start_time >= new_item.end_time:

@@ -5,14 +5,6 @@ from ..Backend.configs import session_config
 from .data import Bounds
 
 
-def _get_open(widgets: list[Widget]):
-    open_widgets = []
-    for widget in widgets:
-        if widget.is_open:
-            open_widgets.append(widget)
-    return open_widgets
-
-
 def partition_grid(widget_count: int):
     window_length = curses.LINES
     window_width = curses.COLS
@@ -65,13 +57,9 @@ def partition_halves(widget_count: int):
     return layout
 
 
-def partition_space(widgets: list[Widget] | int, mode: str = "auto"):
+def partition_space(widgets: int, mode: str = "auto"):
     """Available modes: auto, halves, grid """
-    if isinstance(widgets, int):
-        widget_count = widgets
-    else:
-        open_widgets = _get_open(widgets)
-        widget_count = len(open_widgets)
+    widget_count = widgets
 
     # Note that the layout is read in reverse (right to left, bottom to top)
     match mode.lower():

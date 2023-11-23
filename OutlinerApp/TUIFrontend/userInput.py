@@ -3,7 +3,7 @@ import curses
 import watchdog
 from watchdog.events import FileSystemEventHandler
 
-from . import application
+from . import application, widgets
 from . import manual
 from .data import Bounds, Point
 from .outliners import TaskOutliner, CalendarOutliner
@@ -20,7 +20,6 @@ class InputManager(FileSystemEventHandler):
 
     def __init__(self, app, window):
         self.children = []
-        self.root_window = None
         self.focused: Widget = None
         self.app: application.Application = app
         self.window: curses.window = window
@@ -28,22 +27,27 @@ class InputManager(FileSystemEventHandler):
     def regiseter_child(self, child: Widget):
         self.children.append(child)
         child.input_manager = self
-        if self.root_window is None:
-            self.root_window = child
 
-    def make_root(self, widget: Widget):
-        for child in self.children:
-            if child == widget:
-                self.root_window = child
+    def deregister_child(self, child: Widget):
+        if child.is_focused:
+            self.move_focus(False)
+        child.input_manager = None
+        self.children.remove(child)
 
     def handle_input(self):
         key = self.window.getch()
+
+        if key == curses.KEY_RESIZE:
+            curses.resize_term(*self.window.getmaxyx())
+            self.app.enqueue_partition_update()
+            return
+
         for child in self.children:
             if child.is_focused:
                 self.focused = child
                 break
         else:
-            self.focused = self.children[0]
+            self.focused: Widget = self.children[0]
         # mouse events:
         if key == curses.KEY_MOUSE:
             try:
@@ -82,6 +86,9 @@ class InputManager(FileSystemEventHandler):
             return
 
         if isinstance(self.focused, TaskOutliner):
+            if key == ord("s"):
+                self.focused.create_subtask()
+                return
             if key == ord("h"):
                 self.focused.toggle_hide_done()
                 return
@@ -90,7 +97,7 @@ class InputManager(FileSystemEventHandler):
                 self.focused.mark_done()
                 return
 
-        if isinstance(self.focused, CalendarOutliner):
+        elif isinstance(self.focused, CalendarOutliner):
             if key == ord("T"):
                 self.focused.show_today()
                 return
@@ -114,15 +121,14 @@ class InputManager(FileSystemEventHandler):
             return
 
         if key == ord("f"):
-            self.fullscreen()
-            return
-
-        if key == ord("s"):
-            self.open_all()
+            # self.fullscreen()
             return
 
         if key == ord("\t"):
-            self.move_focus()
+            self.move_focus(False)
+            return
+        if key == 353:  # If shift+tab
+            self.move_focus(True)
             return
 
         if key == ord("?"):
@@ -153,47 +159,26 @@ class InputManager(FileSystemEventHandler):
             self.reset_partition()
             return
 
-        if key == curses.KEY_RESIZE:
-            curses.resize_term(*self.window.getmaxyx())
-            return
-
     def show_help(self):
         self.window.clear()
         manual.HelpPage.render(self.window)
         self.window.getch()
 
-    def move_focus(self):
-        for i in range(len(self.children)):
-            if self.children[i].is_focused:
-                self.children[i].unfocus()
-                n = i
-        for j in range(n + 1, len(self.children)):
-            if self.children[j].is_open:
-                self.children[j].focus()
-                break
-        else:
-            for j in range(0, n):
-                if self.children[j].is_open:
-                    self.children[j].focus()
-                    break
-            else:
-                self.focused.focus()
-
-    def open_all(self):
-        for child in self.children:
-            child.is_open = True
-
-    def fullscreen(self):
-        for child in self.children:
-            if not child.is_focused:
-                child.is_open = False
+    def move_focus(self, reverse=False):
+        if len(self.children) == 1:
+            return
+        d = -1 if reverse else 1
+        foc_ind = self.children.index(self.focused)
+        self.focused.unfocus()
+        self.focused = self.children[(foc_ind - d) % len(self.children)].focus()
 
     def close_focused(self):
+        if len(self.children) == 1:
+            return
         self.focused: Widget
-        self.focused.is_open = False
         self.app.widgets.remove(self.focused)
-
-        self.move_focus()
+        self.deregister_child(self.focused)
+        self.move_focus(False)
 
     def reset_partition(self):
         session_config.WindowPartition.horizontal = 0
@@ -254,14 +239,6 @@ class InputManager(FileSystemEventHandler):
             if child.window.enclose(y, x):
                 return child
 
-        '''
-        for child in self.children:
-            child: Widget
-            if child.bounds.collide(x, y):
-                return child
-        return None
-        '''
-
     def swap_widget(self):
         directons = ""
         key = None
@@ -304,14 +281,18 @@ class InputManager(FileSystemEventHandler):
                         directons += " LEFT"
             preselected.render_decorations(color=preselected_color)
             preselected.window.syncup()
-            self.window.refresh()
         else:
-            pres_ind = self.app.widgets.index(preselected)
+            try:
+                pres_ind = self.app.widgets.index(preselected)
+            except ValueError:
+                raise ValueError(preselected, self.app.widgets)
             foc_ind = self.app.widgets.index(self.focused)
 
             self.app.widgets[pres_ind] = self.focused
+            self.children[pres_ind] = self.focused
 
             self.app.widgets[foc_ind] = preselected
+            self.children[foc_ind] = preselected
 
             self.app.force_update_all()
 

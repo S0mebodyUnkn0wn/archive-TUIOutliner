@@ -9,7 +9,7 @@ class TaskNode:
 
     @property
     def icon(self):
-        if self.importance == Importance.DONE:
+        if self.is_done:
             icon = session_config.Icons.done_icon
         elif self.importance == Importance.DOING_C:
             icon = session_config.Icons.doing_C_icon
@@ -42,34 +42,61 @@ class TaskNode:
     @property
     def is_excluded(self):
         return self.importance in session_config.TaskConfig.exclude_tasks and (
-                    self.deadline is None or self.deadline < date.today())
+                self.deadline is None or self.deadline < date.today())
 
-    def __init__(self, text: str = None, deadline: date = None, importance: int = data.Importance.TODO_B,
-                 origin: TaskOrigin = None):
+    @property
+    def priority(self):
+        priority = self.importance
+        if self.is_done:
+            priority=1
+        if self.deadline is not None:
+            if self.deadline>date.today():
+                if priority<0:
+                    priority = Importance.DEFAULT
+            if priority>0:
+                priority *= 1000
+                priority -= (self.deadline - date.today()).days
+
+        return priority
+
+    @property
+    def importance(self):
+        if self.is_done:
+            return Importance.DONE
+        return self._importance
+
+    @property
+    def is_done(self):
+        return self._is_done
+
+    def __init__(self, text: str = None, deadline: date = None, importance: int = data.Importance.TODO_B):
 
         self.is_root = True
         self.root_node = self
         self.ident_level = 0
 
-        self.text = text
-        self.origin = origin
-        self.parent_node = None
+        self.text: str = text
+        self.parent_node: TaskNode | None = None
         self.child_nodes: list = []
-        self.deadline = deadline
-        self.importance = importance
+        self.deadline: date = deadline
+        self._importance: int = importance
+        self._is_done: bool = False
 
     def __str__(self):
         if self.is_root:
             return ""
-        return self.text
-    
+        return session_config.TaskConfig.tab_string * self.ident_level + self.icon + self.text
+
+    def sort_children(self):
+        self.child_nodes.sort(reverse=True)
+
     def is_identical(self, other):
         if isinstance(other, TaskNode):
             return (self == other) and self.child_nodes == other.child_nodes
-        
+
     def __eq__(self, other):
         if isinstance(other, TaskNode):
-            return (self.text == other.text) and (self.importance == other.importance)
+            return (self.text == other.text) and (self.priority == other.priority)
         elif isinstance(other, str):
             return self.text == other
         elif other is None:
@@ -77,23 +104,27 @@ class TaskNode:
         else:
             raise TypeError(f"cannot compare {type(other)} with TaskNode")
 
+    def compare_deadlines(self, other: "TaskNode"):
+        if self.deadline is not None:
+            if other.deadline is not None:
+                if self.deadline < other.deadline:
+                    return 1
+                if self.deadline == other.deadline:
+                    return 0
+                if self.deadline > other.deadline:
+                    return -1
+            else:
+                return 1
+        if self.deadline is None and other.deadline is not None:
+            return -1
+        return 0
+
     def __gt__(self, other):
         if isinstance(other, TaskNode):
-            if self.importance > other.importance:
-                return True
-            elif self.importance < other.importance:
-                return False
-            elif self.deadline is not None:
-                if other.deadline is not None:
-                    return self.deadline < other.deadline
-                else:
-                    return True
-            elif other.deadline is not None:
-                return False
-            elif self.text > other.text:
-                return False
-            else:
-                return True
+            if self.priority == other.priority:
+                return self.text <= other.text
+            return self.priority > other.priority
+
         if isinstance(other, str):
             if self.text > other:
                 return True
@@ -102,41 +133,17 @@ class TaskNode:
         else:
             raise TypeError(f"can only compare TaskNode or str with TaskNode not '{type(other)}'")
 
-    def mark_done(self):
-        if self.importance != Importance.DONE:
-            self.importance = Importance.DONE
-        else:
-            self.importance = Importance.TODO_B
+    def set_done(self, is_done: bool = True, affect_children: bool = True):
+        if affect_children:
+            for child in self.child_nodes:
+                child.set_done(is_done)
+        self._is_done = is_done
+        self.parent_node.sort_children()
 
-    def to_cli_format(self):
-        return session_config.TaskConfig.tab_string * self.ident_level + self.icon + self.text
+    def toggle_done(self, affect_children: bool= True):
+        is_done = not self.is_done
+        self.set_done(is_done,affect_children)
 
-    def to_logseq_format(self):
-        if self.is_root:
-            return
-        out = "\n- "
-        if self.importance == Importance.DONE:
-            out += "DONE "
-        elif Importance.TODO_C <= self.importance <= Importance.TODO_A:
-            out += "TODO "
-        elif Importance.DOING_C <= self.importance <= Importance.DOING_A:
-            out += "DOING "
-        elif Importance.WAITING_C <= self.importance <= Importance.WAITING_A:
-            out += "WAITING "
-        match (self.importance % 10):
-            case 4:
-                out += "[#C] "
-            case 5:
-                out += "[#B] "
-            case 6:
-                out += "[#A] "
-        out += self.text
-        if self.deadline is not None:
-            out += "\n DEADLINE: <" + self.deadline.strftime("%Y-%m-%d %a") + ">"
-        return out
-
-    def is_done(self):
-        return self.importance==Importance.DONE
 
     def get_tree(self):
         if self.is_root:
@@ -144,28 +151,23 @@ class TaskNode:
         elif self.is_excluded:
             return ""
         else:
-            out = session_config.TaskConfig.tab_string * self.ident_level + self.icon + self.text + "\n"
+            out = f"{session_config.TaskConfig.tab_string * self.ident_level} {self.icon} {self.text}\n"
         for child in self.child_nodes:
             out += child.get_tree()
         return out
 
     def get_all_children(self, with_deadline_only=False):
-        if self.is_excluded:
-            return []
         include_self = True
-        if (with_deadline_only and self.deadline is None) or self.is_root:
+        if (with_deadline_only and self.deadline is None) or self.is_root or self.is_excluded:
             include_self = False
-        if len(self.child_nodes) == 0:
-            return [self] if include_self else []
-        else:
-            nodes = [self] if include_self else []
+
+        nodes = [self] if include_self else []
+
+        if len(self.child_nodes) > 0:
             for child in self.child_nodes:
                 nodes.extend(child.get_all_children())
-            return nodes
 
-    def get_info(self):
-        info = f"Task: {self.text}, duedate: {self.deadline}, has {len(self.child_nodes)} immediate child nodes"
-        return info
+        return nodes
 
     def add_subtask(self, subtask):
         already_in = self.find_subtask(subtask)
@@ -213,31 +215,3 @@ class TaskNode:
                 return result
         else:
             return False
-
-    def to_calcure_csv(self, hide_tasks=()):
-        if self.is_root:
-            out = ""
-        else:
-            importance_str = "normal"
-            if self.importance == Importance.DONE:
-                importance_str = "done"
-            elif Importance.DOING_C <= self.importance <= Importance.DOING_A:
-                importance_str = "important"
-            if self.importance in hide_tasks and (
-                    self.parent_node.is_root or self.parent_node.importance in hide_tasks):
-                out = ""
-            else:
-                if self.deadline is None:
-                    year = 0
-                    month = 0
-                    day = 0
-                else:
-                    year = self.deadline.year
-                    month = self.deadline.month
-                    day = self.deadline.day
-                out = f"{year},{month},{day},\"{self.ident_level * '--' + self.text if len(self.text) < 99 else self.text[:96] + '...'}\",{importance_str}\n"
-        for i in range(len(self.child_nodes)):
-            out += self.child_nodes[i].to_calcure_csv(hide_tasks=hide_tasks)
-        if self.is_root:
-            out = out.strip()
-        return out

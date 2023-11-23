@@ -6,7 +6,6 @@ from .widgets import Widget, Header
 from ..Backend import data
 from ..Backend import ioManager
 from ..Backend.configs import session_config
-from ..Backend.events import Event
 from ..Backend.tasks import TaskNode
 from ..Backend.timetables import TimetableItem, TimetableTask
 
@@ -21,17 +20,11 @@ class Outliner(Widget):
         self.fixed_width = self.config.fixed_width
         self.fixed_length = self.config.fixed_length
 
-    def remove_entry(self):
-        pass
-
     def add_entry(self):
         pass
 
     def scroll(self, direction: (int, int)):
         pass
-
-    def update(self):
-        super().update()
 
 
 class TaskOutliner(Outliner):
@@ -62,8 +55,8 @@ class TaskOutliner(Outliner):
             color = session_config.ColorsConfig.waiting_pair
         return color
 
-    def __init__(self, stdscr: curses.window, x_offset=0, y_offset=0):
-        super().__init__(stdscr, x_offset, y_offset)
+    def __init__(self, stdscr: curses.window, app, x_offset=0, y_offset=0):
+        super().__init__(stdscr, app,x_offset, y_offset)
         self.config = session_config.TaskOutlinerConfig
         self.start_line = 0
         self.reload_data()
@@ -76,10 +69,6 @@ class TaskOutliner(Outliner):
     def header(self):
         return Header(f"TODO List")
 
-    def update(self):
-        super().update()
-        self.reload_data()
-
     def scroll(self, direction: (int, int)):
         super().scroll(direction)
         lines = direction[0]
@@ -87,6 +76,14 @@ class TaskOutliner(Outliner):
             self.start_line += lines
 
     def add_entry(self):
+        self.add_task()
+
+    def remove_entry(self):
+        self.remove_task()
+
+    def add_task(self, root_task = None):
+        if root_task is None:
+            root_task = ioManager.get_root_task()
         task_text = self.input_manager.recieve_text("Enter task: ")
         if len(task_text) == 0:
             return False
@@ -99,11 +96,21 @@ class TaskOutliner(Outliner):
         else:
             task_deadline = None
         new_task = TaskNode(text=task_text, deadline=task_deadline)
-        ioManager.add_subtask(new_task)
+        ioManager.add_subtask(new_task, root_task)
 
-    def remove_entry(self):
+    def create_subtask(self):
         TaskOutliner.remove_mode = True
-        self.update()
+        self.renderer.update()
+        task_str = self.input_manager.recieve_text("Create subtask for task number: ")
+        TaskOutliner.remove_mode = False
+        if len(task_str) != 0:
+            task_num = int(task_str)
+            if 1 <= task_num <= len(self.tasks):
+                self.add_task(self.tasks[task_num - 1])
+
+    def remove_task(self):
+        TaskOutliner.remove_mode = True
+        self.renderer.update()
         task_str = self.input_manager.recieve_text("Delete task number:")
         if len(task_str) != 0:
             task_num = int(task_str)
@@ -116,7 +123,7 @@ class TaskOutliner(Outliner):
 
     def modify_task(self, job: str):
         TaskOutliner.remove_mode = True
-        self.update()
+        self.renderer.update()
         prompt = job
         match job:
             case "mark done":
@@ -138,7 +145,7 @@ class TaskOutliner(Outliner):
             if not self.content_length >= line >= 0:
                 continue
             output = f"{(str(self.tasks.index(task) + 1) + ' ') if TaskOutliner.remove_mode else ''}" \
-                     f"{task.to_cli_format()}"
+                     f"{task}"
             right_limit = self.content_right
 
             if task.deadline is not None:
@@ -164,14 +171,15 @@ class TaskOutliner(Outliner):
         return right_limit
 
 
+
 class CalendarOutliner(Outliner):
     config = session_config.EventOutlinerConfig
     widget_title = "Events"
     show_tasks = True
     ID = 1
 
-    def __init__(self, stdscr: curses.window, x_offset=0, y_offset=0):
-        super().__init__(stdscr, x_offset, y_offset)
+    def __init__(self, stdscr: curses.window, app, x_offset=0, y_offset=0):
+        super().__init__(stdscr, app, x_offset, y_offset)
         self.open_date = datetime.date.today()
         self.reload_data()
 
@@ -181,14 +189,15 @@ class CalendarOutliner(Outliner):
             self.width - self.header_margin * 2, self.config.chars["f_hor"])
         return Header(self.widget_title + out[len(self.widget_title):])
 
-    def update(self):
-        super().update()
-        self.reload_data()
-
     def toggle_deadlines(self):
         self.show_tasks = not self.show_tasks
 
     def add_entry(self):
+        self.add_event()
+    def remove_entry(self):
+        self.remove_event()
+
+    def add_event(self):
         date_str = self.input_manager.recieve_text("Add new event on (dd or dd/mm/yyyy): ", split_mask="__/__/____")
         if 0 < len(date_str) <= 2:
             new_event_date = self.open_date.replace(day=int(date_str))
@@ -209,22 +218,22 @@ class CalendarOutliner(Outliner):
         if len(new_event_text) == 0:
             return False
 
-        new_event = Event(date=new_event_date, text=new_event_text)
+        new_event = TimetableItem(date=new_event_date, name=new_event_text)
         new_event.start_time = new_event_time
-        ioManager.add_event(new_event)
+        ioManager.add_to_timetable(new_event)
 
-    def remove_entry(self):
+    def remove_event(self):
         date_str = self.input_manager.recieve_text("Delete event on (date): ", split_mask="__")
         if len(date_str) == 0:
             return
         date = int(date_str)
         CalendarOutliner.remove_mode = self.open_date.replace(day=date)
-        self.input_manager.app.force_update_all()
+        self.renderer.update()
 
         event_str = self.input_manager.recieve_text("Delete event number:")
         if len(event_str) != 0:
             event_num = int(event_str)
-            ioManager.remove_from_timetable(datetime.date(self.open_date.year, self.open_date.month, date), event_num)
+            ioManager.remove_from_timetable(datetime.date(self.open_date.year, self.open_date.month, date), event_num-1)
         CalendarOutliner.remove_mode = False
 
     def scroll(self, direction: (int, int)):
@@ -312,7 +321,7 @@ class CalendarOutliner(Outliner):
                 out += f"{event.task.text}"
             else:
                 out = f"{(str(event_count) + ' ') if cell_date == CalendarOutliner.remove_mode else event.icon}" \
-                      f"{event}"
+                      f"{str(event)}"
             out += " " * (curses.COLS - len(out))
             self.window.addnstr(cell_top + event_count, cell_left, out, self.right - cell_left,
                                 curses.color_pair(color))
@@ -324,14 +333,39 @@ class AgendaOutliner(CalendarOutliner, TaskOutliner):
     config = session_config.DayOutlinerConfig
     line_count: int = 0
 
-    def __init__(self, stdscr: curses.window, x_offset=0, y_offset=0):
-        super().__init__(stdscr, x_offset, y_offset)
+    def __init__(self, stdscr: curses.window, app, x_offset=0, y_offset=0):
+        super().__init__(stdscr, app, x_offset, y_offset)
         self.open_date = datetime.date.today() + datetime.timedelta(1)
 
     def scroll(self, direction: (int, int)):
         TaskOutliner.scroll(self, direction)
         days = direction[1]
         self.open_date += datetime.timedelta(days=days)
+
+    def add_entry(self):
+        mode:str = self.input_manager.recieve_text("Would you like to add a [T]ask or an [E]vent? ")
+        if len(mode) == 0:
+            return
+        match(mode[0].lower()):
+            case "t":
+                self.add_task()
+            case "e":
+                self.add_event()
+            case _:
+                return
+
+    def remove_entry(self):
+        mode: str = self.input_manager.recieve_text("Would you like to remove [T]ask or an [E]vent? ")
+        if len(mode) == 0:
+            return
+        match (mode[0].lower()):
+            case "t":
+                self.remove_task()
+            case "e":
+                self.remove_event()
+            case _:
+                return
+
 
     def reload_data(self):
         pass
@@ -389,7 +423,7 @@ class AgendaOutliner(CalendarOutliner, TaskOutliner):
             later_text = f"Later, on {calendar.month_abbr[later.month]} {later.day}"
         elif later < self.today:
             later_text = f"Previously, on {calendar.month_abbr[later.month]} {later.day}"
-        out = today_text.center(horizontal_size, self.config.chars["f_hor"])
+        out = today_text.center(horizontal_size-1, self.config.chars["f_hor"])
         if len(later_text) > 0:
             out += later_text.center(horizontal_size - self.header_margin * 2, self.config.chars["f_hor"])
         out = widget_title + out[len(widget_title):]

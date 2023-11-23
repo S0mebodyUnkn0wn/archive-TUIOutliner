@@ -1,6 +1,5 @@
 import datetime
 import unittest
-from OutlinerApp.Backend.timetable import TimeTableItem, Timetable
 
 
 class MyTestCase(unittest.TestCase):

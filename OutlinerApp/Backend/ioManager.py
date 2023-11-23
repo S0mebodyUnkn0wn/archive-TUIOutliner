@@ -2,10 +2,9 @@
 import datetime
 import pickle
 
-from ..Backend.events import Event
-from ..Backend.timetables import Timetable, TimetableItem
 from ..Backend.configs import session_config
 from ..Backend.tasks import TaskNode
+from ..Backend.timetables import Timetable, TimetableItem
 
 _root_task: TaskNode | None = None
 _timetable: Timetable | None = None
@@ -41,10 +40,11 @@ def add_subtask(subtask: TaskNode, root = _root_task):
 
 
 def mark_done(task: TaskNode):
-    tt = _timetable.find_item(task).task
-    tt.mark_done()
+    tt = _timetable.find_item(task)
+    if tt is not None:
+        tt.task.toggle_done()
     if tt.__repr__() != task.__repr__():
-        task.mark_done()
+        task.toggle_done()
     dump_timetable()
     dump_tasks()
 
@@ -62,24 +62,17 @@ def remove_task(task: TaskNode):
     dump_tasks()
 
 
-def add_event(event: Event):
+def add_to_timetable(item: TimetableItem):
     global _root_task
     global _timetable
-    _timetable.add_item(TimetableItem.from_event(event))
-    dump_timetable()
-
-
-def remove_event(event: Event):
-    global _root_task
-    global _timetable
-    _timetable.remove_item(TimetableItem.from_event(event))
+    _timetable.add_item(item)
     dump_timetable()
 
 
 def remove_from_timetable(date: datetime.date, num: int):
     global _root_task
     global _timetable
-    _timetable.remove_item(date,num)
+    _timetable.remove_item(date, num)
     dump_timetable()
 
 
@@ -109,6 +102,7 @@ def load_tasks():
             _root_task = pickle.load(file)
         except EOFError:
             _root_task = TaskNode()
+    _root_task.sort_children()
 
 
 def dump_tasks():
@@ -117,7 +111,3 @@ def dump_tasks():
     with open(session_config.IOConfig.tasks_file, "wb") as file:
         pickle.dump(_root_task, file)
 
-
-if __name__ == '__main__':
-    pass
-    # load_data()

@@ -1,4 +1,5 @@
 import curses
+import time
 
 from ..Backend.configs import session_config
 
@@ -11,6 +12,11 @@ class Renderer:
 
     def __init__(self, widget: "Widget"):
         self.widget = widget
+        self.render_thread: "RenderThread" = self.widget.app.render_thread
+
+    def update(self):
+        self.render_thread.render_lock.release()
+        time.sleep(.05)
 
     def render_header(self, color=None):
         if color is None:

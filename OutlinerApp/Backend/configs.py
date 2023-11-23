@@ -159,7 +159,7 @@ class _IconList:
 class ConfigManager:
     _locations = (Path(__file__, "../config.ini").resolve(),
                   Path(__file__, "../../Config/config.ini").resolve(),
-                  Path("./data/condig.ini").resolve()
+                  Path(__file__, "../../../data/config.ini").resolve()
                   # Path(Path.home(),".config/TUICalendar/config.ini").resolve()
                   )
 

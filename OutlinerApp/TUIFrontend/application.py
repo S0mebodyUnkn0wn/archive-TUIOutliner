@@ -1,4 +1,5 @@
 import curses
+import threading
 
 from watchdog.observers import Observer
 
@@ -8,6 +9,29 @@ from .widgets import Widget
 from .outliners import TaskOutliner, CalendarOutliner, AgendaOutliner, DayplanOutliner
 from ..Backend.configs import session_config
 from . import partitioner
+
+
+class RenderThread:
+    render_lock = threading.Semaphore()
+    app: "Application"
+    _thread: threading.Thread
+    _terminate: bool = False
+
+    def __init__(self,app):
+        self.app = app
+        self._thread = threading.Thread(target=self.syncup_render)
+
+    def start(self):
+        self._thread.start()
+
+    def syncup_render(self):
+        while not self._terminate:
+            self.app.update_render()
+            self.render_lock.acquire()
+
+    def terminate(self):
+        self._terminate = True
+        self.render_lock.release()
 
 
 class Application:
@@ -23,6 +47,7 @@ class Application:
         self.input_manager: userInput.InputManager = userInput.InputManager(self, self.stdscr)
         self.layout: list["Bounds"] = None
         self._do_update = False
+        self.render_thread = RenderThread(self)
         self.run()
 
     def run(self):
@@ -38,7 +63,7 @@ class Application:
         # ioManager.load_data()
 
         observer = Observer()
-        observer.schedule(self.input_manager, path=session_config.IOConfig.logseq_dir, recursive=True)
+        # observer.schedule(self.input_manager, path=session_config.IOConfig.logseq_dir, recursive=True)
         observer.schedule(self.input_manager, path=session_config.IOConfig.tasks_file, recursive=True)
         observer.schedule(self.input_manager, path=session_config.IOConfig.event_file, recursive=True)
         observer.start()
@@ -54,12 +79,17 @@ class Application:
             self.add_widget(widget_class)
 
         self.widgets[0].focus()
+
+        self.render_thread.start()
+
         try:
             while True:
-                self.update_render()
+                # self.update_render()
+                self.render_thread.render_lock.release()
                 self.input_manager.handle_input()
         except KeyboardInterrupt:
-            pass
+            self.render_thread.terminate()
+
         observer.stop()
         return
 
@@ -67,7 +97,7 @@ class Application:
         self.layout = partitioner.partition_space(len(self.widgets)+1)
         bounds = self.layout[-1]
         new_window = self.stdscr.subwin(bounds.length,bounds.width,bounds.top,bounds.left)
-        new_widget = widget_class(new_window)
+        new_widget = widget_class(new_window, app=self)
         new_widget.is_open = True
         self.widgets.append(new_widget)
         self.input_manager.regiseter_child(new_widget)
@@ -90,32 +120,28 @@ class Application:
         self.stdscr.clear()
         self.stdscr.redrawwin()
         for widget in self.widgets:
-            if widget.is_open:
-                widget.update()
+            widget.update()
 
     def update_data_all(self):
         self.stdscr.redrawwin()
         for widget in self.widgets:
-            if widget.is_open:
-                widget.reload_data()
+            widget.reload_data()
 
     def update_render(self):
         # TODO Refactor
+        # self.stdscr.clear()
         self.stdscr.erase()
         self.stdscr.redrawwin()
         try:
             if len(self.widgets) > 0:
-                self.input_manager.make_root(self.widgets[0])
+                if self._do_update:
+                    # Called when we need to change the layout
+                    new_part = partitioner.partition_space(len(self.widgets))
+                    self.layout = new_part
+                    self.update_windows()
+                    self._do_update = False
                 for widget in self.widgets:
-                    if self._do_update:
-                        new_part = partitioner.partition_space(self.widgets)
-                        self.layout = new_part
-                        self.update_windows()
-                        self._do_update=False
-                    if widget.is_open:
-                        widget.reload_data()
-                        widget.render()
-                        #widget.window.box()
+                    widget.update()
         except curses.error:
             pass
         self.stdscr.refresh()
