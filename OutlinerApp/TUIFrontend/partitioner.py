@@ -33,8 +33,11 @@ def partition_grid(widget_count: int):
     return layout
 
 
-def partition_halves(widget_count: int):
-    layout = [Bounds(0, 0, curses.LINES, curses.COLS)]
+def partition_halves(widget_count: int, add_shortcut_bar=False):
+    bottom_offset = 0
+    if add_shortcut_bar:
+        bottom_offset=1
+    layout = [Bounds(0, 0, curses.LINES-bottom_offset, curses.COLS)]
 
     sep = session_config.WindowPartition.separation
 

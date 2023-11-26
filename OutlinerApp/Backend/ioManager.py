@@ -49,6 +49,13 @@ def mark_done(task: TaskNode):
     dump_tasks()
 
 
+def edit_task(task: TaskNode, new_name=None, new_deadline=None):
+    if isinstance(new_name,str):
+        task.name = new_name
+    if isinstance(new_deadline,datetime.date):
+        task.deadline = new_deadline
+
+
 def remove_task(task: TaskNode):
     global _root_task
     global _timetable

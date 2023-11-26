@@ -1,5 +1,7 @@
 import curses
 import threading
+import rich
+import textual
 
 from watchdog.observers import Observer
 
@@ -100,8 +102,8 @@ class Application:
         new_widget = widget_class(new_window, app=self)
         new_widget.is_open = True
         self.widgets.append(new_widget)
-        self.input_manager.regiseter_child(new_widget)
         self.enqueue_partition_update()
+        return new_widget
 
     def update_windows(self):
         for index in range(len(self.widgets)):

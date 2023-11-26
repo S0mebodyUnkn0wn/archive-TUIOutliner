@@ -1,4 +1,5 @@
 import curses
+from typing import List
 
 import watchdog
 from watchdog.events import FileSystemEventHandler
@@ -6,9 +7,9 @@ from watchdog.events import FileSystemEventHandler
 from . import application, widgets
 from . import manual
 from .data import Bounds, Point
-from .outliners import TaskOutliner, CalendarOutliner
-from .overlays import OpenNewOverlay
-from .widgets import Widget
+from .outliners import TaskOutliner, CalendarOutliner, Outliner
+from .overlays import SelectorOverlay
+from .widgets import Widget, Header
 from ..Backend.configs import session_config
 
 
@@ -19,20 +20,9 @@ class InputManager(FileSystemEventHandler):
         self.app.update_data_all()
 
     def __init__(self, app, window):
-        self.children = []
         self.focused: Widget = None
         self.app: application.Application = app
         self.window: curses.window = window
-
-    def regiseter_child(self, child: Widget):
-        self.children.append(child)
-        child.input_manager = self
-
-    def deregister_child(self, child: Widget):
-        if child.is_focused:
-            self.move_focus(False)
-        child.input_manager = None
-        self.children.remove(child)
 
     def handle_input(self):
         key = self.window.getch()
@@ -42,12 +32,12 @@ class InputManager(FileSystemEventHandler):
             self.app.enqueue_partition_update()
             return
 
-        for child in self.children:
+        for child in self.app.widgets:
             if child.is_focused:
                 self.focused = child
                 break
         else:
-            self.focused: Widget = self.children[0]
+            self.focused: Widget = self.app.widgets[0]
         # mouse events:
         if key == curses.KEY_MOUSE:
             try:
@@ -61,29 +51,32 @@ class InputManager(FileSystemEventHandler):
                 pass
 
         # passed through:
-        if key == curses.KEY_UP:
-            self.focused.scroll((-1, 0))
-            return
+        if isinstance(self.focused, Outliner):
+            if key == curses.KEY_UP:
+                self.focused.scroll((-1, 0))
+                return
 
-        if key == curses.KEY_DOWN:
-            self.focused.scroll((1, 0))
-            return
+            if key == curses.KEY_DOWN:
+                self.focused.scroll((1, 0))
+                return
 
-        if key == curses.KEY_RIGHT:
-            self.focused.scroll((0, 1))
-            return
+            if key == curses.KEY_RIGHT:
+                self.focused.scroll((0, 1))
+                return
 
-        if key == curses.KEY_LEFT:
-            self.focused.scroll((0, -1))
-            return
+            if key == curses.KEY_LEFT:
+                self.focused.scroll((0, -1))
+                return
+            if key == ord("e"):
+                self.focused.edit_entry()
+                return
+            if key == ord("a"):
+                self.focused.add_entry()
+                return
 
-        if key == ord("a"):
-            self.focused.add_entry()
-            return
-
-        if key == ord("r"):
-            self.focused.remove_entry()
-            return
+            if key == ord("r"):
+                self.focused.remove_entry()
+                return
 
         if isinstance(self.focused, TaskOutliner):
             if key == ord("s"):
@@ -114,6 +107,10 @@ class InputManager(FileSystemEventHandler):
 
         if key == ord("o"):
             self.open_new()
+            return
+
+        if key == ord("O"):
+            self.open_new(replace_focused=True)
             return
 
         if key == ord("W"):
@@ -165,32 +162,32 @@ class InputManager(FileSystemEventHandler):
         self.window.getch()
 
     def move_focus(self, reverse=False):
-        if len(self.children) == 1:
+        if len(self.app.widgets) == 1:
             return
         d = -1 if reverse else 1
-        foc_ind = self.children.index(self.focused)
+        foc_ind = self.app.widgets.index(self.focused)
         self.focused.unfocus()
-        self.focused = self.children[(foc_ind - d) % len(self.children)].focus()
+        self.focused = self.app.widgets[(foc_ind - d) % len(self.app.widgets)].focus()
 
     def close_focused(self):
-        if len(self.children) == 1:
+        if len(self.app.widgets) == 1:
             return
         self.focused: Widget
-        self.app.widgets.remove(self.focused)
-        self.deregister_child(self.focused)
+        widget_to_colose = self.focused
         self.move_focus(False)
+        self.app.widgets.remove(widget_to_colose)
 
     def reset_partition(self):
         session_config.WindowPartition.horizontal = 0
         session_config.WindowPartition.vertical = 0
 
     def partition_down(self):
-        for child in self.children:
+        for child in self.app.widgets:
             if child.is_focused:
                 session_config.WindowPartition.vertical += 1
 
     def partition_up(self):
-        for child in self.children:
+        for child in self.app.widgets:
             if child.is_focused:
                 session_config.WindowPartition.vertical -= 1
 
@@ -200,11 +197,21 @@ class InputManager(FileSystemEventHandler):
     def partition_right(self):
         session_config.WindowPartition.horizontal += 1
 
+    def collide(self, x, y):
+        """Returns a widget that contains the point (x,y)"""
+
+        for child in self.app.widgets:
+            child: Widget
+            if child.window.enclose(y, x):
+                return child
+
     def display_prompt(self, prompt: str, color=session_config.ColorsConfig.generic_text_pair):
         try:
             self.window.addnstr(curses.LINES - 1, 0, prompt, curses.COLS, curses.color_pair(color))
         except curses.error:
             pass
+
+    # Input States defined below
 
     def recieve_text(self, prompt: str, split_mask=None) -> str:
         out = ""
@@ -230,14 +237,6 @@ class InputManager(FileSystemEventHandler):
                     out += chr(key)
 
         return out
-
-    def collide(self, x, y):
-        """Returns a widget that contains the point (x,y)"""
-
-        for child in self.children:
-            child: Widget
-            if child.window.enclose(y, x):
-                return child
 
     def swap_widget(self):
         directons = ""
@@ -289,15 +288,20 @@ class InputManager(FileSystemEventHandler):
             foc_ind = self.app.widgets.index(self.focused)
 
             self.app.widgets[pres_ind] = self.focused
-            self.children[pres_ind] = self.focused
+            self.app.widgets[pres_ind] = self.focused
 
             self.app.widgets[foc_ind] = preselected
-            self.children[foc_ind] = preselected
+            self.app.widgets[foc_ind] = preselected
 
             self.app.force_update_all()
 
-    def open_new(self):
-        overlay = OpenNewOverlay(self.window, self.app.all_widgets)
+    def open_new(self,replace_focused = False):
+        if replace_focused:
+            header = Header("Replace Focused Widget With:", align="center")
+        else:
+            header = Header("Open New Widget", align="center")
+
+        overlay = SelectorOverlay(self.window, self.app, self.app.all_widgets,header)
 
         key = None
 
@@ -310,7 +314,15 @@ class InputManager(FileSystemEventHandler):
                 overlay.scroll(1)
             if key == ord("\n"):
                 try:
-                    self.app.add_widget(overlay.closed_widgets[overlay.selected_line])
+                    new_widget_class = overlay.items[overlay.selected_line]
+                    if replace_focused:
+                        new_widget: Widget = new_widget_class(self.focused.window,self.app)
+                        self.app.widgets[self.app.widgets.index(self.focused)] = new_widget
+                        self.focused = new_widget.focus()
+                    else:
+                        self.app.add_widget(new_widget_class).focus()
+                        self.focused.unfocus()
+                        self.focused = new_widget_class
                 except IndexError:
                     pass
                 break

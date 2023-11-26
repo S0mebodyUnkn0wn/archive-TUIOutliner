@@ -2,7 +2,7 @@ from datetime import date
 
 from . import data
 from .configs import session_config
-from .data import Importance, TaskOrigin
+from .data import Importance
 
 
 class TaskNode:

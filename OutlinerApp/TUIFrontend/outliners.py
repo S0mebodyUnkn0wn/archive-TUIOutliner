@@ -1,7 +1,9 @@
 import calendar
 import curses
 import datetime
+import time
 
+from .overlays import EditFieldsOverlay
 from .widgets import Widget, Header
 from ..Backend import data
 from ..Backend import ioManager
@@ -26,6 +28,16 @@ class Outliner(Widget):
     def scroll(self, direction: (int, int)):
         pass
 
+    def remove_entry(self):
+        pass
+
+    @property
+    def header(self):
+        return Header(f"Outliner")
+
+    def edit_entry(self):
+        pass
+
 
 class TaskOutliner(Outliner):
     tasks: list[TaskNode]
@@ -45,7 +57,9 @@ class TaskOutliner(Outliner):
             session_config.TaskConfig.exclude_tasks.append(data.Importance.DONE)
 
     @staticmethod
-    def _select_color(task):
+    def _select_color(task) -> int:
+        """Selects a color pair for the supplied task in accordance with task's importance and status
+        :returns: suitable color pair number"""
         color = session_config.ColorsConfig.generic_text_pair
         if task.importance == data.Importance.DONE:
             color = session_config.ColorsConfig.done_pair
@@ -81,12 +95,18 @@ class TaskOutliner(Outliner):
     def remove_entry(self):
         self.remove_task()
 
-    def add_task(self, root_task = None):
+    def edit_entry(self):
+        self.edit_task()
+
+    def add_task(self, root_task = None) -> TaskNode | None:
+        """Prompts the user to create a new task, if the user enters valid data for all prompts a new task is added to the to-do list
+        :returns: newly created TaskNode if the user has created a new task, None if the user has stopped the process prematurely
+        """
         if root_task is None:
             root_task = ioManager.get_root_task()
         task_text = self.input_manager.recieve_text("Enter task: ")
         if len(task_text) == 0:
-            return False
+            return None
 
         deadline_str = self.input_manager.recieve_text("Enter task deadline (dd/mm/yyyy): ", split_mask="__/__/____")
         if len(deadline_str) == 10:
@@ -96,47 +116,67 @@ class TaskOutliner(Outliner):
         else:
             task_deadline = None
         new_task = TaskNode(text=task_text, deadline=task_deadline)
-        ioManager.add_subtask(new_task, root_task)
+        return ioManager.add_subtask(new_task, root_task)
 
-    def create_subtask(self):
+    def create_subtask(self) -> TaskNode | None:
+        """Prompts the user to create a subtask of a task, if a task is selected, prompts user to create a task that will be a subtask of the selected task
+        :returns: newly created TaskNode if the user selected and then created a new task, None if the user has stopped the process prematurely
+        """
+        task = self.select_task("Create a subtask for task number:")
+        if task is not None:
+            return self.add_task(task)
+        return None
+
+    def remove_task(self) -> TaskNode | None:
+        """Prompts the user to mark a task as done, if a task is selected, it is deleted from the to-do list
+        :returns: removed TaskNode if user selected a task, None if user chose not to select a task
+        """
+        task = self.select_task("Delete task number:")
+        if task is not None:
+            ioManager.remove_task(task)
+        return task
+
+    def mark_done(self) -> TaskNode | None:
+        """Prompts the user to mark a task as done, if a task is selected, toggles its done status
+        :returns: modified TaskNode if user selected a task, None if user chose not to select a task
+        """
+        task = self.select_task(prompt="Mark as done task number:")
+        if task is not None:
+            ioManager.mark_done(task)
+        return task
+
+    def edit_task(self) -> TaskNode | None:
+        """Prompts the user to select and edit a task, if a task selected opens up an edit overlay
+        :returns: modified TaskNode, None if user did not select a task"""
+        task = self.select_task(prompt="Edit task number:")
+        if task is None:
+            return None
+
+        overlay = EditFieldsOverlay(self.app.stdscr,self.app,task,header=Header(f"Editing fields of task {self.tasks.index(task)+1}","center"))
+
+
+
+
+
+        return task
+
+    def select_task(self, prompt: str) -> TaskNode | None:
+        """Prompts the user to select a task from ones diplayed by the outliner
+        :returns: TaskNode if user selected a task, None if user chose not to select a task
+        """
         TaskOutliner.remove_mode = True
         self.renderer.update()
-        task_str = self.input_manager.recieve_text("Create subtask for task number: ")
-        TaskOutliner.remove_mode = False
-        if len(task_str) != 0:
-            task_num = int(task_str)
-            if 1 <= task_num <= len(self.tasks):
-                self.add_task(self.tasks[task_num - 1])
-
-    def remove_task(self):
-        TaskOutliner.remove_mode = True
-        self.renderer.update()
-        task_str = self.input_manager.recieve_text("Delete task number:")
-        if len(task_str) != 0:
-            task_num = int(task_str)
-            if 1 <= task_num <= len(self.tasks):
-                ioManager.remove_task(self.tasks[task_num - 1])
-        TaskOutliner.remove_mode = False
-
-    def mark_done(self):
-        self.modify_task(job="mark done")
-
-    def modify_task(self, job: str):
-        TaskOutliner.remove_mode = True
-        self.renderer.update()
-        prompt = job
-        match job:
-            case "mark done":
-                prompt = "Mark as done task number:"
 
         task_str = self.input_manager.recieve_text(prompt)
+        TaskOutliner.remove_mode = False
         if len(task_str) != 0:
             task_num = int(task_str)
             if 1 <= task_num <= len(self.tasks):
-                ioManager.mark_done(self.tasks[task_num - 1])
-        TaskOutliner.remove_mode = False
+                return self.tasks[task_num - 1]
+        return None
 
     def render(self):
+        """Prepares render of the current state of the TaskOutliner, does not refresh the screen"""
 
         line = -1 - self.start_line
 
@@ -171,7 +211,6 @@ class TaskOutliner(Outliner):
         return right_limit
 
 
-
 class CalendarOutliner(Outliner):
     config = session_config.EventOutlinerConfig
     widget_title = "Events"
@@ -194,6 +233,7 @@ class CalendarOutliner(Outliner):
 
     def add_entry(self):
         self.add_event()
+
     def remove_entry(self):
         self.remove_event()
 
@@ -312,7 +352,7 @@ class CalendarOutliner(Outliner):
                 break
             if isinstance(event, TimetableTask):
                 if not self.show_tasks: continue
-                if event.task.is_done():
+                if event.task.is_done:
                     out = f"{session_config.Icons.done_icon}"
                     color = session_config.ColorsConfig.done_pair
                 else:

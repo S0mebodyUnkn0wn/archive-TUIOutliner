@@ -200,11 +200,13 @@ class ConfigManager:
         if not logseq_dir.exists():
             raise RuntimeError(str(logseq_dir) + " does not exist")
         if not tasks_file.exists():
-            raise RuntimeError(str(tasks_file) + " does not exist")
+            tasks_file.touch()
+            #raise RuntimeError(str(tasks_file) + " does not exist")
         if not calcure_file.is_file():
             self.IOConfig.calcure_file = Path()
         if not event_file.exists():
-            raise RuntimeError(str(event_file) + " does not exist")
+            event_file.touch()
+            # raise RuntimeError(str(event_file) + " does not exist")
 
         self.IOConfig.logseq_dir = logseq_dir
         self.IOConfig.tasks_file = tasks_file

@@ -39,7 +39,7 @@ class Widget:
     def reload_data():
         pass
 
-    def __init__(self, stdscr: curses.window, app, x_offset=0, y_offset=0, input_manager=None):
+    def __init__(self, stdscr: curses.window, app, x_offset=0, y_offset=0):
         super().__init__()
         self.app = app
         self.config = session_config.WidgetConfig
@@ -52,7 +52,7 @@ class Widget:
         self.left = x_offset
         self.top = y_offset
         self.renderer = Renderer(self)
-        self.input_manager = input_manager
+        self.input_manager: "InputManager" = self.app.input_manager
 
     @staticmethod
     def name():
@@ -149,9 +149,3 @@ class Widget:
             self.renderer.render_frame(color)
         if self.header is not None:
             self.renderer.render_header(color)
-
-
-
-
-
-
