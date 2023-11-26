@@ -1,0 +1,26 @@
+Screen {
+    layout: grid;
+    grid-size: 2;
+    grid-columns: 5fr 3fr;
+    background: #0f1113;
+    color: #e0d4c8
+}
+
+.outliner {
+    border: heavy #e0d4c8;
+    padding: 0 1;
+}
+
+.outliner:focus, .outliner:hover{
+    border: heavy #9e1922;
+    padding: 0 1;
+}
+.calendar {
+    layout: grid;
+    grid-size: 7
+}
+
+.calendar_cell {
+    overflow: hidden;
+    layout: vertical;
+}
