@@ -49,11 +49,21 @@ def mark_done(task: TaskNode):
     dump_tasks()
 
 
-def edit_task(task: TaskNode, new_name=None, new_deadline=None):
-    if isinstance(new_name,str):
-        task.name = new_name
+def edit_task(task: TaskNode, new_text=None, new_deadline=None):
+    if isinstance(new_text, str):
+        tt = _timetable.find_item(task)
+        task.text = new_text
+        if tt is not None:
+            tt.task = task
+            tt.name = tt.task.text
     if isinstance(new_deadline,datetime.date):
+        if task.deadline is not None:
+            _timetable.remove_item(TimetableItem.from_task_with_deadline(task))
         task.deadline = new_deadline
+        _timetable.add_item(TimetableItem.from_task_with_deadline(task))
+    dump_timetable()
+    dump_tasks()
+    return task
 
 
 def remove_task(task: TaskNode):

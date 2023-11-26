@@ -62,9 +62,10 @@ class TimetableTask(TimetableItem):
 
     def __eq__(self, other):
         same = super().__eq__(other)
-        if isinstance(other,TimetableTask):
+        if isinstance(other, TimetableTask):
             return self.task == other.task
         return same
+
 
 class Timetable:
     daytables_by_date: dict[datetime.date, list[TimetableItem]]
@@ -79,11 +80,10 @@ class Timetable:
             day_timetable = self.daytables_by_date[serachitem.deadline]
 
             for item in day_timetable:
-                if isinstance(item,TimetableTask) and item.task == serachitem:
+                if isinstance(item, TimetableTask) and item.task == serachitem:
                     return item
 
         return None
-
 
     def add_item(self, new_item: TimetableItem, overwrite_existing: bool = False):
         if new_item.date in self.daytables_by_date.keys():
@@ -114,6 +114,7 @@ class Timetable:
 
             self.daytables_by_date[new_item.date] = day_timetable
 
+
     @overload
     def remove_item(self, timetable_item: TimetableItem):
         ...
@@ -122,20 +123,16 @@ class Timetable:
     def remove_item(self, date: datetime.date, index: int):
         ...
 
-    @overload
-    def remove_item(self, task: "TaskNode"):
-        ...
-
     def remove_item(self, *args):
         date: datetime.date
         index: int
         if len(args) == 1 and isinstance(args[0], TimetableItem):
-            task_to_remove: TimetableItem = args[0]
-            date = task_to_remove.date
+            item_to_remove: TimetableItem = args[0]
+            date = item_to_remove.date
             if date in self.daytables_by_date.keys():
                 items: list[TimetableItem] = self.daytables_by_date[date]
-                items.remove(task_to_remove)
-                return
+                items.remove(item_to_remove)
+                return item_to_remove
 
         if len(args) == 2 and isinstance(args[0], datetime.date) and isinstance(args[1], int):
             date = args[0]
@@ -143,7 +140,7 @@ class Timetable:
             if date in self.daytables_by_date.keys():
                 items: list[TimetableItem] = self.daytables_by_date[date]
                 if 0 <= index < len(items):
-                    items.pop(index)
+                    return items.pop(index)
 
     def load_pickle(self, file):
         new_timetable = pickle.load(file)

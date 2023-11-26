@@ -70,7 +70,7 @@ class TaskOutliner(Outliner):
         return color
 
     def __init__(self, stdscr: curses.window, app, x_offset=0, y_offset=0):
-        super().__init__(stdscr, app,x_offset, y_offset)
+        super().__init__(stdscr, app, x_offset, y_offset)
         self.config = session_config.TaskOutlinerConfig
         self.start_line = 0
         self.reload_data()
@@ -98,7 +98,7 @@ class TaskOutliner(Outliner):
     def edit_entry(self):
         self.edit_task()
 
-    def add_task(self, root_task = None) -> TaskNode | None:
+    def add_task(self, root_task=None) -> TaskNode | None:
         """Prompts the user to create a new task, if the user enters valid data for all prompts a new task is added to the to-do list
         :returns: newly created TaskNode if the user has created a new task, None if the user has stopped the process prematurely
         """
@@ -152,13 +152,25 @@ class TaskOutliner(Outliner):
         if task is None:
             return None
 
-        overlay = EditFieldsOverlay(self.app.stdscr,self.app,task,header=Header(f"Editing fields of task {self.tasks.index(task)+1}","center"))
+        # TODO TMP IMPLEMENTATION CHANGETO OVERLAYS ASAP
+        task_text = self.input_manager.recieve_text("Edit task text: ", start_with=task.text)
+        if len(task_text) == 0 or task.text == task_text:
+            new_text = None
+        else:
+            new_text = task_text
 
-
-
-
-
-        return task
+        if task.deadline is not None:
+            current_deadline = f"{task.deadline.day}/{task.deadline.month}/{task.deadline.year}"
+        else:
+            current_deadline = ""
+        deadline_str = self.input_manager.recieve_text("Edit task deadline (dd/mm/yyyy): ", split_mask="__/__/____", start_with=current_deadline)
+        if len(deadline_str) == 10 and deadline_str!=current_deadline:
+            deadline_str: str
+            deadline_str = deadline_str.split("/")
+            task_deadline = datetime.date(int(deadline_str[2]), int(deadline_str[1]), int(deadline_str[0]))
+        else:
+            task_deadline = None
+        return ioManager.edit_task(task, task_text, task_deadline)
 
     def select_task(self, prompt: str) -> TaskNode | None:
         """Prompts the user to select a task from ones diplayed by the outliner
@@ -273,7 +285,7 @@ class CalendarOutliner(Outliner):
         event_str = self.input_manager.recieve_text("Delete event number:")
         if len(event_str) != 0:
             event_num = int(event_str)
-            ioManager.remove_from_timetable(datetime.date(self.open_date.year, self.open_date.month, date), event_num-1)
+            ioManager.remove_from_timetable(datetime.date(self.open_date.year, self.open_date.month, date), event_num - 1)
         CalendarOutliner.remove_mode = False
 
     def scroll(self, direction: (int, int)):
@@ -383,10 +395,10 @@ class AgendaOutliner(CalendarOutliner, TaskOutliner):
         self.open_date += datetime.timedelta(days=days)
 
     def add_entry(self):
-        mode:str = self.input_manager.recieve_text("Would you like to add a [T]ask or an [E]vent? ")
+        mode: str = self.input_manager.recieve_text("Would you like to add a [T]ask or an [E]vent? ")
         if len(mode) == 0:
             return
-        match(mode[0].lower()):
+        match (mode[0].lower()):
             case "t":
                 self.add_task()
             case "e":
@@ -405,7 +417,6 @@ class AgendaOutliner(CalendarOutliner, TaskOutliner):
                 self.remove_event()
             case _:
                 return
-
 
     def reload_data(self):
         pass
@@ -463,7 +474,7 @@ class AgendaOutliner(CalendarOutliner, TaskOutliner):
             later_text = f"Later, on {calendar.month_abbr[later.month]} {later.day}"
         elif later < self.today:
             later_text = f"Previously, on {calendar.month_abbr[later.month]} {later.day}"
-        out = today_text.center(horizontal_size-1, self.config.chars["f_hor"])
+        out = today_text.center(horizontal_size - 1, self.config.chars["f_hor"])
         if len(later_text) > 0:
             out += later_text.center(horizontal_size - self.header_margin * 2, self.config.chars["f_hor"])
         out = widget_title + out[len(widget_title):]
@@ -491,8 +502,8 @@ class AgendaOutliner(CalendarOutliner, TaskOutliner):
                 event: TimetableItem = events[column][index]
                 if self.content_length >= line >= 0:
                     output = f"""{(str(index + 1) + ' ') if event.date == CalendarOutliner.remove_mode else event.icon}""" + \
-                         (event.start_time.strftime('%H:%M') + ' ' if event.start_time is not None else '') + event.name
-                    self.renderer.render_string(output,self.content_top + line, self.content_left + column_width * column, column_width, color)
+                             (event.start_time.strftime('%H:%M') + ' ' if event.start_time is not None else '') + event.name
+                    self.renderer.render_string(output, self.content_top + line, self.content_left + column_width * column, column_width, color)
 
                 line += 1
 

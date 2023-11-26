@@ -213,8 +213,8 @@ class InputManager(FileSystemEventHandler):
 
     # Input States defined below
 
-    def recieve_text(self, prompt: str, split_mask=None) -> str:
-        out = ""
+    def recieve_text(self, prompt: str, split_mask=None, start_with: str = "") -> str:
+        out = start_with
         cursor = "_"
         key = None
         while key not in [ord("\n"), curses.KEY_ENTER]:
