@@ -215,26 +215,57 @@ class InputManager(FileSystemEventHandler):
 
     def recieve_text(self, prompt: str, split_mask=None, start_with: str = "") -> str:
         out = start_with
-        cursor = "_"
+        cursor = ""
+        curses.curs_set(1)
+        cursor_pos = len(start_with)
         key = None
         while key not in [ord("\n"), curses.KEY_ENTER]:
             self.display_prompt(cursor + " " * curses.COLS)
-            self.display_prompt(f"{prompt}{out}{cursor}")
+            self.display_prompt(f"{prompt}{out[:cursor_pos]}{cursor}{out[cursor_pos:]}")
+            self.window.move(curses.LINES-1,len(prompt)+cursor_pos)
             key = self.window.getch()
-            if key == curses.KEY_BACKSPACE:
-                out = out[:len(out) - 1]
+            if key == curses.KEY_END:
+                cursor_pos = len(out)
+            if key == curses.KEY_HOME:
+                cursor_pos = 0
+            if key == 567: # CTRL + RIGHT
+                next_word = out.find(" ",cursor_pos+1)
+                if next_word!=-1:
+                    cursor_pos = next_word
+                else:
+                    cursor_pos = len(out)
+            if key == 552: # CTRL + LEFT
+                prev_word = out.rfind(" ", 0, cursor_pos)
+                if prev_word != -1:
+                    cursor_pos = prev_word
+                else:
+                    cursor_pos = 0
+            if key == curses.KEY_DC:
+                out = out[:cursor_pos]+out[cursor_pos+1:]
+                continue
+            if key == curses.KEY_BACKSPACE and cursor_pos>0:
+                out = out[:cursor_pos-1]+out[cursor_pos:]
+                cursor_pos -= 1
                 continue
             if key == curses.KEY_EXIT or key == 27:
                 return ""
-            if key != 10 and 32<=key<=255:         #chr(key).isalnum() or chr(key) == " ":
+            if key == curses.KEY_LEFT and cursor_pos > 0:
+                cursor_pos-=1
+                continue
+            if key == curses.KEY_RIGHT and cursor_pos<len(out):
+                cursor_pos+=1
+                continue
+            if 32 <= key <= 255:
                 if split_mask is not None:
                     if len(out) + 1 > len(split_mask):
                         continue
                     if split_mask[len(out)] != "_":
                         out += split_mask[len(out)]
-                    out += chr(key)
-                else:
-                    out += chr(key)
+                        cursor_pos += 1
+                out = out[:cursor_pos] + chr(key) + out[cursor_pos:]
+                cursor_pos += 1
+                continue
+        curses.curs_set(0)
 
         return out
 
