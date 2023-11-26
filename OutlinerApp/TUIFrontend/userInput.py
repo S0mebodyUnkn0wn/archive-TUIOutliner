@@ -226,7 +226,7 @@ class InputManager(FileSystemEventHandler):
                 continue
             if key == curses.KEY_EXIT or key == 27:
                 return ""
-            if key != 10:         #chr(key).isalnum() or chr(key) == " ":
+            if key != 10 and 32<=key<=255:         #chr(key).isalnum() or chr(key) == " ":
                 if split_mask is not None:
                     if len(out) + 1 > len(split_mask):
                         continue
