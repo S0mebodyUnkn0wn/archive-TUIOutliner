@@ -155,9 +155,7 @@ class TaskOutliner(Outliner):
         # TODO TMP IMPLEMENTATION CHANGETO OVERLAYS ASAP
         task_text = self.input_manager.recieve_text("Edit task text: ", start_with=task.text)
         if len(task_text) == 0 or task.text == task_text:
-            new_text = None
-        else:
-            new_text = task_text
+            task_text = None
 
         if task.deadline is not None:
             current_deadline = f"{task.deadline.day}/{task.deadline.month}/{task.deadline.year}"
@@ -181,7 +179,7 @@ class TaskOutliner(Outliner):
 
         task_str = self.input_manager.recieve_text(prompt)
         TaskOutliner.remove_mode = False
-        if len(task_str) != 0:
+        if len(task_str) != 0 and task_str != "\n":
             task_num = int(task_str)
             if 1 <= task_num <= len(self.tasks):
                 return self.tasks[task_num - 1]
@@ -199,7 +197,6 @@ class TaskOutliner(Outliner):
             output = f"{(str(self.tasks.index(task) + 1) + ' ') if TaskOutliner.remove_mode else ''}" \
                      f"{task}"
             right_limit = self.content_right
-
             if task.deadline is not None:
                 right_limit = self._render_deadline(line, task)
             if self.content_left + len(output) >= right_limit:
@@ -213,9 +210,13 @@ class TaskOutliner(Outliner):
         self.window.syncup()
 
     def _render_deadline(self, line, task):
-        color = session_config.ColorsConfig.deadline_pair if task.importance != data.Importance.DONE \
-            else session_config.ColorsConfig.done_pair
-        deadline = session_config.Icons.deadline_icon + datetime.date.strftime(task.deadline, "%Y/%m/%d")
+        if task.importance == data.Importance.DONE:
+            color = session_config.ColorsConfig.done_pair
+        elif task.deadline < datetime.date.today():
+            color = session_config.ColorsConfig.selected_pair
+        else:
+            color = session_config.ColorsConfig.deadline_pair
+        deadline = session_config.Icons.deadline_icon + task.deadline.strftime("%d/%m/%Y")
         right_limit = self.content_right - len(deadline)
 
         self.renderer.render_string(deadline, self.content_top + line, self.content_right - len(deadline), self.content_width, color)
