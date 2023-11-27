@@ -56,11 +56,14 @@ def edit_task(task: TaskNode, new_text=None, new_deadline=None):
         if tt is not None:
             tt.task = task
             tt.name = tt.task.text
-    if isinstance(new_deadline,datetime.date):
+    if isinstance(new_deadline,datetime.date) or new_deadline=="":
+        if new_deadline == "":
+            new_deadline = None
         if task.deadline is not None:
             _timetable.remove_item(TimetableItem.from_task_with_deadline(task))
         task.deadline = new_deadline
-        _timetable.add_item(TimetableItem.from_task_with_deadline(task))
+        if new_deadline is not None:
+            _timetable.add_item(TimetableItem.from_task_with_deadline(task))
     dump_timetable()
     dump_tasks()
     return task

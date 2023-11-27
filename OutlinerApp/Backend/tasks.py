@@ -85,7 +85,7 @@ class TaskNode:
     def __str__(self):
         if self.is_root:
             return ""
-        return session_config.TaskConfig.tab_string * self.ident_level + self.icon + self.text
+        return session_config.TaskConfig.tab_string * self.ident_level + self.icon + self.text      
 
     def sort_children(self):
         self.child_nodes.sort(reverse=True)

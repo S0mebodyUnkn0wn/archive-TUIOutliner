@@ -162,7 +162,9 @@ class TaskOutliner(Outliner):
         else:
             current_deadline = ""
         deadline_str = self.input_manager.recieve_text("Edit task deadline (dd/mm/yyyy): ", split_mask="__/__/____", start_with=current_deadline)
-        if len(deadline_str) == 10 and deadline_str!=current_deadline:
+        if len(deadline_str)==0:
+            task_deadline = ""
+        elif deadline_str!=current_deadline:
             deadline_str: str
             deadline_str = deadline_str.split("/")
             task_deadline = datetime.date(int(deadline_str[2]), int(deadline_str[1]), int(deadline_str[0]))

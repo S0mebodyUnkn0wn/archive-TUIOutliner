@@ -248,7 +248,7 @@ class InputManager(FileSystemEventHandler):
                 cursor_pos -= 1
                 continue
             if key == curses.KEY_EXIT or key == 27:
-                return ""
+                return start_with
             if key == curses.KEY_LEFT and cursor_pos > 0:
                 cursor_pos-=1
                 continue
