@@ -6,9 +6,11 @@ from .data import Importance
 
 
 class TaskNode:
+    """A class representing a task node in a tree of tasks"""
 
     @property
     def icon(self):
+        """An icon used to represent the task's status, pulled from the config file"""
         if self.is_done:
             icon = session_config.Icons.done_icon
         elif self.importance == Importance.DOING_C:
@@ -28,6 +30,7 @@ class TaskNode:
 
     @property
     def total_children(self):
+        """A total number of tasks contained inside this task"""
         if self.is_excluded:
             return 0
         if len(self.child_nodes) == 0:
@@ -41,11 +44,13 @@ class TaskNode:
 
     @property
     def is_excluded(self):
+        """``True`` if this task should be excluded based on current exclusion rules"""
         return self.importance in session_config.TaskConfig.exclude_tasks and (
                 self.deadline is None or self.deadline < date.today())
 
     @property
     def priority(self):
+        """How high should the task be in the TO-DO list"""
         priority = self.importance
         if self.is_done:
             priority=1
@@ -61,12 +66,14 @@ class TaskNode:
 
     @property
     def importance(self):
+        """Task's importance value"""
         if self.is_done:
             return Importance.DONE
         return self._importance
 
     @property
     def is_done(self):
+        """``True`` if the task was marked as done"""
         return self._is_done
 
     def __init__(self, text: str = None, deadline: date = None, importance: int = data.Importance.TODO_B):
@@ -88,13 +95,19 @@ class TaskNode:
         return session_config.TaskConfig.tab_string * self.ident_level + self.icon + self.text      
 
     def sort_children(self):
+        """Orders task's childen based on their priority (Highest - first)"""
         self.child_nodes.sort(reverse=True)
 
     def is_identical(self, other):
+        """``True`` if task is equeal to other and task's and other's children are the same"""
         if isinstance(other, TaskNode):
             return (self == other) and self.child_nodes == other.child_nodes
 
     def __eq__(self, other):
+        """``TaskNode`` is equal to another ``TaskNode``, if its ``.text`` and ``.priority`` is equeal to other
+
+        ``TaskNode`` is equal to ``str`` if its ``.text`` is equal to ``str``
+        """
         if isinstance(other, TaskNode):
             return (self.text == other.text) and (self.priority == other.priority)
         elif isinstance(other, str):
@@ -134,6 +147,10 @@ class TaskNode:
             raise TypeError(f"can only compare TaskNode or str with TaskNode not '{type(other)}'")
 
     def set_done(self, is_done: bool = True, affect_children: bool = True):
+        """Sets task's is_done to *is_done* argument
+        :arg is_done: new value for task.is_done
+        :arg affect_children: should task children's is_done fields be updated as well
+        """
         if affect_children:
             for child in self.child_nodes:
                 child.set_done(is_done)
@@ -141,11 +158,15 @@ class TaskNode:
         self.parent_node.sort_children()
 
     def toggle_done(self, affect_children: bool= True):
+        """Toggles task's is_done status
+        :arg affect_children: should task children's is_done fields be updated as well
+        """
         is_done = not self.is_done
         self.set_done(is_done,affect_children)
 
 
     def get_tree(self):
+        """Returnes a string depiction of task's tree"""
         if self.is_root:
             out = ""
         elif self.is_excluded:
@@ -157,6 +178,7 @@ class TaskNode:
         return out
 
     def get_all_children(self, with_deadline_only=False):
+        """Returns a list of all nodes that are successors of this task"""
         include_self = True
         if (with_deadline_only and self.deadline is None) or self.is_root or self.is_excluded:
             include_self = False
@@ -170,6 +192,7 @@ class TaskNode:
         return nodes
 
     def add_subtask(self, subtask):
+        """Adds a new task to this task's children"""
         already_in = self.find_subtask(subtask)
         if not already_in:
 
@@ -188,6 +211,7 @@ class TaskNode:
         return False
 
     def get_level(self):
+        """Returns a nu,ber representing how many parent nodes this task has"""
         level = 0
         p = self.parent_node
         while p is not None:
@@ -196,9 +220,14 @@ class TaskNode:
         return level
 
     def remove(self):
-        self.parent_node.child_nodes.remove(self)
+        """Deletes this task from its parent's children list, thus removing it (and its subtree) from the tree"""
+        return self.parent_node.child_nodes.remove(self)
 
-    def find_subtask(self, task):
+    def find_subtask(self, task: str | "TaskNode"):
+        """Searches for a ``TaskNode`` object equal to *task* in this task's subtree
+        :arg task: a ``TaskNode`` or task text to search for
+        :returns: found ``TaskNode`` object; ``False`` if no suitable ``TaskNode`` was found
+        """
         if self.is_root:
             pass
         elif isinstance(task, str):
