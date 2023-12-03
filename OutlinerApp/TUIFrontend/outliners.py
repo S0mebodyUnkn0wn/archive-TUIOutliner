@@ -23,12 +23,24 @@ class Outliner(Widget):
         self.fixed_length = self.config.fixed_length
 
     def add_entry(self):
+        """
+        Starts a process of adding an entry to the outliner
+
+        *Implementation details:*
+            * Should be a wrapper calling outliner's add method
+        """
         pass
 
     def scroll(self, direction: (int, int)):
         pass
 
     def remove_entry(self):
+        """
+        Starts a process of removing an entry to the outliner
+
+        *Implementation details:*
+            * Should be a wrapper calling outliner's remove method
+        """
         pass
 
     @property
@@ -36,6 +48,12 @@ class Outliner(Widget):
         return Header(f"Outliner")
 
     def edit_entry(self):
+        """
+        Starts a process of editing an entry of the outliner
+
+        *Implementation details:*
+            * Should be a wrapper calling outliner's edit method
+        """
         pass
 
 
