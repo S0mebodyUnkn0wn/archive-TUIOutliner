@@ -152,8 +152,8 @@ class TaskOutliner(Outliner):
         if task is None:
             return None
 
-        # TODO TMP IMPLEMENTATION CHANGETO OVERLAYS ASAP
-        task_text = self.input_manager.recieve_text("Edit task text: ", start_with=task.text)
+        # TODO TMP IMPLEMENTATION CHANGE TO OVERLAYS ASAP
+        task_text = self.input_manager.recieve_text("Edit task text: ", prefill=task.text)
         if len(task_text) == 0 or task.text == task_text:
             task_text = None
 
@@ -161,7 +161,7 @@ class TaskOutliner(Outliner):
             current_deadline = f"{task.deadline.day}/{task.deadline.month}/{task.deadline.year}"
         else:
             current_deadline = ""
-        deadline_str = self.input_manager.recieve_text("Edit task deadline (dd/mm/yyyy): ", split_mask="__/__/____", start_with=current_deadline)
+        deadline_str = self.input_manager.recieve_text("Edit task deadline (dd/mm/yyyy): ", split_mask="__/__/____", prefill=current_deadline)
         if len(deadline_str)==0:
             task_deadline = ""
         elif deadline_str!=current_deadline:
@@ -252,6 +252,52 @@ class CalendarOutliner(Outliner):
     def remove_entry(self):
         self.remove_event()
 
+    def edit_entry(self):
+        self.edit_event()
+
+    def select_event(self, action_prompt: str = "Select") -> TimetableItem | None:
+        date_str = self.input_manager.recieve_text(f"{action_prompt} event on (date): ", split_mask="__")
+        if len(date_str) == 0:
+            return
+        date = int(date_str)
+        CalendarOutliner.remove_mode = self.open_date.replace(day=date)
+        self.renderer.update()
+
+        event_str = self.input_manager.recieve_text(f"{action_prompt} event number: ")
+        CalendarOutliner.remove_mode = False
+        date = self.open_date.replace(day=date)
+        if len(event_str) != 0:
+            event_num = int(event_str)
+            return ioManager.get_timetable().find_item(date, event_num - 1)
+
+    def edit_event(self):
+        event = self.select_event("Edit")
+        if event is None:
+            return
+        date_str = self.input_manager.recieve_text("Edit event date (dd or dd/mm/yyyy): ", split_mask="__/__/____", prefill=event.date.strftime("%d/%m/%Y"))
+        if 0 < len(date_str) <= 2:
+            new_event_date = self.open_date.replace(day=int(date_str))
+        elif len(date_str) == 10:
+            date_str = date_str.split("/")
+            new_event_date = datetime.date(int(date_str[2]), int(date_str[1]), int(date_str[0]))
+        else:
+            return False
+
+        time_str = self.input_manager.recieve_text("Edit event time (hh:mm): ", split_mask="__:__", prefill=event.start_time.strftime("%H:%M"))
+        if len(time_str) == 5:
+            time_str = time_str.split(":")
+            new_event_time = datetime.time(int(time_str[0]), int(time_str[1]))
+        else:
+            new_event_time = None
+
+        new_event_text = self.input_manager.recieve_text("Edit event name: ",prefill=event.name)
+        if len(new_event_text) == 0:
+            return False
+
+        new_event = TimetableItem(date=new_event_date, name=new_event_text)
+        new_event.start_time = new_event_time
+        ioManager.edit_event(event, new_event)
+
     def add_event(self):
         date_str = self.input_manager.recieve_text("Add new event on (dd or dd/mm/yyyy): ", split_mask="__/__/____")
         if 0 < len(date_str) <= 2:
@@ -278,18 +324,8 @@ class CalendarOutliner(Outliner):
         ioManager.add_to_timetable(new_event)
 
     def remove_event(self):
-        date_str = self.input_manager.recieve_text("Delete event on (date): ", split_mask="__")
-        if len(date_str) == 0:
-            return
-        date = int(date_str)
-        CalendarOutliner.remove_mode = self.open_date.replace(day=date)
-        self.renderer.update()
-
-        event_str = self.input_manager.recieve_text("Delete event number:")
-        if len(event_str) != 0:
-            event_num = int(event_str)
-            ioManager.remove_from_timetable(datetime.date(self.open_date.year, self.open_date.month, date), event_num - 1)
-        CalendarOutliner.remove_mode = False
+        event = self.select_event("Delete")
+        ioManager.remove_from_timetable(event)
 
     def scroll(self, direction: (int, int)):
         super().scroll(direction)

@@ -213,11 +213,11 @@ class InputManager(FileSystemEventHandler):
 
     # Input States defined below
 
-    def recieve_text(self, prompt: str, split_mask=None, start_with: str = "") -> str:
-        out = start_with
+    def recieve_text(self, prompt: str, split_mask=None, prefill: str = "") -> str:
+        out = prefill
         cursor = ""
         curses.curs_set(1)
-        cursor_pos = len(start_with)
+        cursor_pos = len(prefill)
         key = None
         while key not in [ord("\n"), curses.KEY_ENTER]:
             self.display_prompt(cursor + " " * curses.COLS)
@@ -248,7 +248,7 @@ class InputManager(FileSystemEventHandler):
                 cursor_pos -= 1
                 continue
             if key == curses.KEY_EXIT or key == 27:
-                return start_with
+                return prefill
             if key == curses.KEY_LEFT and cursor_pos > 0:
                 cursor_pos-=1
                 continue
@@ -259,8 +259,8 @@ class InputManager(FileSystemEventHandler):
                 if split_mask is not None:
                     if len(out) + 1 > len(split_mask):
                         continue
-                    if split_mask[len(out)] != "_":
-                        out += split_mask[len(out)]
+                    if split_mask[cursor_pos] != "_":
+                        out = out[:cursor_pos] + split_mask[cursor_pos] + out[cursor_pos:]
                         cursor_pos += 1
                 out = out[:cursor_pos] + chr(key) + out[cursor_pos:]
                 cursor_pos += 1

@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 import datetime
 import pickle
+from typing import overload
 
 from ..Backend.configs import session_config
 from ..Backend.tasks import TaskNode
@@ -47,6 +48,15 @@ def mark_done(task: TaskNode):
         task.toggle_done()
     dump_timetable()
     dump_tasks()
+
+
+def edit_event(event: TimetableItem, new_event: TimetableItem):
+    if event.date!= new_event.date:
+        _timetable.move_item(event,new_event.date)
+    event.name = new_event.name
+    event.start_time = new_event.start_time
+    dump_timetable()
+    return event
 
 
 def edit_task(task: TaskNode, new_text=None, new_deadline=None):

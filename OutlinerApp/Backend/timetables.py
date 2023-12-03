@@ -73,15 +73,37 @@ class Timetable:
     def __init__(self):
         self.daytables_by_date = {}
 
+    def move_item(self, item: TimetableItem, new_date: datetime.date):
+        if self.remove_item(item) is None:
+            return None
+        item.date = new_date
+        self.add_item(item)
+
+    @overload
+    def find_item(self, date: datetime.date, num: int):
+        ...
+
+    @overload
     def find_item(self, serachitem: TaskNode):
-        if isinstance(serachitem, TaskNode):
-            if serachitem.deadline not in self.daytables_by_date.keys():
+        ...
+
+    def find_item(self, *args):
+        if len(args)==1 and isinstance(args[0], TaskNode):
+            searchitem = args[0]
+            if searchitem.deadline not in self.daytables_by_date.keys():
                 return None
-            day_timetable = self.daytables_by_date[serachitem.deadline]
+            day_timetable = self.daytables_by_date[searchitem.deadline]
 
             for item in day_timetable:
-                if isinstance(item, TimetableTask) and item.task == serachitem:
+                if isinstance(item, TimetableTask) and item.task == searchitem:
                     return item
+        if len(args)==2 and isinstance(args[0], datetime.date) and isinstance(args[1], int):
+            date = args[0]
+            index = args[1]
+            if date in self.daytables_by_date.keys():
+                items: list[TimetableItem] = self.daytables_by_date[date]
+                if 0 <= index < len(items):
+                    return items[index]
 
         return None
 
@@ -114,7 +136,6 @@ class Timetable:
 
             self.daytables_by_date[new_item.date] = day_timetable
 
-
     @overload
     def remove_item(self, timetable_item: TimetableItem):
         ...
@@ -141,6 +162,8 @@ class Timetable:
                 items: list[TimetableItem] = self.daytables_by_date[date]
                 if 0 <= index < len(items):
                     return items.pop(index)
+
+        return None
 
     def load_pickle(self, file):
         new_timetable = pickle.load(file)
