@@ -98,11 +98,21 @@ def add_to_timetable(item: TimetableItem):
     _timetable.add_item(item)
     dump_timetable()
 
+@overload
+def remove_from_timetable(item: TimetableItem):
+    ...
 
+@overload
 def remove_from_timetable(date: datetime.date, num: int):
+    ...
+
+def remove_from_timetable(*args):
     global _root_task
     global _timetable
-    _timetable.remove_item(date, num)
+    if len(args) == 2 and isinstance(args[0], datetime.date) and isinstance(args[1], int):
+        _timetable.remove_item(args[0], args[1])
+    if len(args) == 1 and isinstance(args[0], TimetableItem):
+        _timetable.remove_item(args[0])
     dump_timetable()
 
 
