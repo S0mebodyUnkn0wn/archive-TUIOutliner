@@ -1,4 +1,5 @@
 from datetime import date
+from typing import overload, Union
 
 from . import data
 from .configs import session_config
@@ -53,12 +54,12 @@ class TaskNode:
         """How high should the task be in the TO-DO list"""
         priority = self.importance
         if self.is_done:
-            priority=1
+            priority = 1
         if self.deadline is not None:
-            if self.deadline>date.today():
-                if priority<0:
+            if self.deadline > date.today():
+                if priority < 0:
                     priority = Importance.DEFAULT
-            if priority>0:
+            if priority > 0:
                 priority *= 1000
                 priority -= (self.deadline - date.today()).days
 
@@ -92,7 +93,7 @@ class TaskNode:
     def __str__(self):
         if self.is_root:
             return ""
-        return session_config.TaskConfig.tab_string * self.ident_level + self.icon + self.text      
+        return session_config.TaskConfig.tab_string * self.ident_level + self.icon + self.text
 
     def sort_children(self):
         """Orders task's childen based on their priority (Highest - first)"""
@@ -157,13 +158,12 @@ class TaskNode:
         self._is_done = is_done
         self.parent_node.sort_children()
 
-    def toggle_done(self, affect_children: bool= True):
+    def toggle_done(self, affect_children: bool = True):
         """Toggles task's is_done status
         :arg affect_children: should task children's is_done fields be updated as well
         """
         is_done = not self.is_done
-        self.set_done(is_done,affect_children)
-
+        self.set_done(is_done, affect_children)
 
     def get_tree(self):
         """Returnes a string depiction of task's tree"""
@@ -223,7 +223,15 @@ class TaskNode:
         """Deletes this task from its parent's children list, thus removing it (and its subtree) from the tree"""
         return self.parent_node.child_nodes.remove(self)
 
-    def find_subtask(self, task: str | "TaskNode"):
+    @overload
+    def find_subtask(self, task: "TaskNode"):
+        ...
+
+    @overload
+    def find_subtask(self, task: str):
+        ...
+
+    def find_subtask(self, task) -> Union['TaskNode', bool]:
         """Searches for a ``TaskNode`` object equal to *task* in this task's subtree
         :arg task: a ``TaskNode`` or task text to search for
         :returns: found ``TaskNode`` object; ``False`` if no suitable ``TaskNode`` was found
