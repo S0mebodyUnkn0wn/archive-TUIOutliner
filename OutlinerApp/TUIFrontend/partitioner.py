@@ -1,6 +1,5 @@
 import curses
 
-from .widgets import Widget
 from ..Backend.configs import session_config
 from .data import Bounds
 
@@ -21,15 +20,18 @@ def partition_grid(widget_count: int):
     grid_cell_length = window_length // grid_rows
     grid_cell_width = window_width // grid_cols
     grid_sep = session_config.WindowPartition.separation
-    for col in range(grid_cols - 1, -1, -1):
-        for row in range(grid_rows - 1, -1, -1):
+    for col in range(grid_cols):
+        for row in range(grid_rows):
             cell_top = row * grid_cell_length
             cell_left = col * grid_cell_width
             cell_bottom = cell_top + grid_cell_length - grid_sep // 2 if row < grid_rows - 1 else curses.LINES
             cell_right = cell_left + grid_cell_width - grid_sep if col < grid_cols - 1 else curses.COLS
-            cell_bounds = Bounds(cell_top, cell_left, cell_bottom, cell_right)
+            cell_bounds = Bounds(top=cell_top, left=cell_left, bottom=cell_bottom, right=cell_right)
             layout.append(cell_bounds)
 
+    if len(layout) > widget_count:
+        for i in range(len(layout)-1,widget_count-1,-1):
+            layout[i-1].bottom = layout[i].bottom
     return layout
 
 

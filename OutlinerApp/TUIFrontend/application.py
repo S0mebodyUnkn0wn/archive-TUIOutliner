@@ -1,7 +1,5 @@
 import curses
 import threading
-import rich
-import textual
 
 from watchdog.observers import Observer
 
@@ -48,6 +46,7 @@ class Application:
         self.stdscr: curses.window = stdscr
         self.input_manager: userInput.InputManager = userInput.InputManager(self, self.stdscr)
         self.layout: list["Bounds"] = None
+        self.layout_mode = "auto"
         self._do_update = False
         self.render_thread = RenderThread(self)
         self.run()
@@ -96,9 +95,12 @@ class Application:
         return
 
     def add_widget(self, widget_class: type[Widget]):
-        self.layout = partitioner.partition_space(len(self.widgets)+1)
+        self.layout = partitioner.partition_space(len(self.widgets)+1,mode=self.layout_mode)
         bounds = self.layout[-1]
-        new_window = self.stdscr.subwin(bounds.length,bounds.width,bounds.top,bounds.left)
+        try:
+            new_window = self.stdscr.subwin(bounds.length,bounds.width,bounds.top,bounds.left)
+        except curses.error as err:
+            raise RuntimeError(bounds,widget_class,curses.LINES)
         new_widget = widget_class(new_window, app=self)
         new_widget.is_open = True
         self.widgets.append(new_widget)
@@ -109,7 +111,7 @@ class Application:
         for index in range(len(self.widgets)):
             bounds = self.layout[index]
             widget = self.widgets[index]
-            widget.window.bkgdset(str(index))
+            # widget.window.bkgdset(str(index))
             widget.window = self.stdscr.subwin(bounds.length,bounds.width,bounds.top,bounds.left)
 
     def enqueue_partition_update(self):
@@ -138,7 +140,7 @@ class Application:
             if len(self.widgets) > 0:
                 if self._do_update:
                     # Called when we need to change the layout
-                    new_part = partitioner.partition_space(len(self.widgets))
+                    new_part = partitioner.partition_space(len(self.widgets),mode=self.layout_mode)
                     self.layout = new_part
                     self.update_windows()
                     self._do_update = False
