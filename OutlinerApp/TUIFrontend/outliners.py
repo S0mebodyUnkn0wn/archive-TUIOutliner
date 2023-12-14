@@ -104,7 +104,7 @@ class TaskOutliner(Outliner):
     def scroll(self, direction: (int, int)):
         super().scroll(direction)
         lines = direction[0]
-        if 0 <= self.start_line + lines < self.line_count:
+        if 0 <= self.start_line + lines <= self.line_count:
             self.start_line += lines
 
     def add_entry(self):
@@ -553,7 +553,7 @@ class AgendaOutliner(CalendarOutliner, TaskOutliner):
             line = 0 - self.start_line
 
             # Draw contents of a block (events or tasks)
-            for index in range(len(events)):
+            for index in range(len(events[column])):
                 if index >= len(events[column]):
                     continue
                 event: TimetableItem = events[column][index]

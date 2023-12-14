@@ -119,12 +119,15 @@ class Timetable:
             index = -1
             for item in day_timetable:
                 index += 1
+                if new_item.start_time is None:
+                    day_timetable.insert(0, new_item)
+                    break
                 if item.start_time is None:
                     day_timetable.insert(index, new_item)
                     break
-                if item.end_time <= new_item.start_time:
+                if item.start_time <= new_item.start_time:
                     continue
-                elif item.start_time >= new_item.end_time:
+                elif item.start_time >= new_item.start_time:
                     day_timetable.insert(index, new_item)
                     break
                 else:
