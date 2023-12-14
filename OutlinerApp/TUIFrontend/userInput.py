@@ -213,13 +213,15 @@ class InputManager(FileSystemEventHandler):
 
     # Input States defined below
 
-    def recieve_text(self, prompt: str, split_mask=None, prefill: str = "") -> str:
+    def recieve_text(self, prompt: str, split_mask=None, prefill: str = "", charlimit=0) -> str:
         out = prefill
         cursor = ""
         curses.curs_set(1)
         cursor_pos = len(prefill)
         key = None
         while key not in [ord("\n"), curses.KEY_ENTER]:
+            if len(out) >= charlimit != 0:
+                break
             self.display_prompt(cursor + " " * curses.COLS)
             self.display_prompt(f"{prompt}{out[:cursor_pos]}{cursor}{out[cursor_pos:]}")
             self.window.move(curses.LINES-1,len(prompt)+cursor_pos)

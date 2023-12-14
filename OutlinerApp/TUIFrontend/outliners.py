@@ -452,7 +452,7 @@ class AgendaOutliner(CalendarOutliner, TaskOutliner):
         self.open_date += datetime.timedelta(days=days)
 
     def add_entry(self):
-        mode: str = self.input_manager.recieve_text("Would you like to add a [T]ask or an [E]vent? ")
+        mode: str = self.input_manager.recieve_text("Would you like to add a [T]ask or an [E]vent? ",charlimit=1)
         if len(mode) == 0:
             return
         match (mode[0].lower()):
@@ -464,7 +464,7 @@ class AgendaOutliner(CalendarOutliner, TaskOutliner):
                 return
 
     def remove_entry(self):
-        mode: str = self.input_manager.recieve_text("Would you like to remove [T]ask or an [E]vent? ")
+        mode: str = self.input_manager.recieve_text("Would you like to remove a [T]ask or an [E]vent? ",charlimit=1)
         if len(mode) == 0:
             return
         match (mode[0].lower()):
@@ -475,6 +475,17 @@ class AgendaOutliner(CalendarOutliner, TaskOutliner):
             case _:
                 return
 
+    def edit_entry(self):
+        mode: str = self.input_manager.recieve_text("Would you like to edit a [T]ask or an [E]vent? ", charlimit=1)
+        if len(mode) == 0:
+            return
+        match (mode[0].lower()):
+            case "t":
+                self.edit_task()
+            case "e":
+                self.edit_event()
+            case _:
+                return
     def reload_data(self):
         pass
 
